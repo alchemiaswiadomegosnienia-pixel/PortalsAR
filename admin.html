@@ -3,342 +3,299 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🛠️ AR Portale — Panel Admina</title>
+    <title>🛠️ Quantum Teleport — Admin</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
+        * { margin:0; padding:0; box-sizing:border-box; }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: #0a0a1a;
-            color: #e0e0e0;
-            min-height: 100vh;
+            font-family: -apple-system, sans-serif;
+            background: #0a0a1a; color: #e0e0e0;
+            min-height: 100vh; padding-bottom: 40px;
         }
-
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 20px;
-        }
+        .container { max-width: 600px; margin: 0 auto; padding: 16px; }
 
         h1 {
-            text-align: center;
-            font-size: 1.8rem;
-            margin: 20px 0;
+            text-align: center; font-size: 1.4rem;
+            margin: 16px 0;
             background: linear-gradient(90deg, #00d4ff, #7b2fff);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         }
 
-        h2 {
-            font-size: 1.2rem;
-            margin: 20px 0 10px;
-            color: #00d4ff;
-        }
+        h2 { font-size: 1rem; color: #00d4ff; margin: 20px 0 10px; }
 
         .card {
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 12px;
-            padding: 20px;
-            margin: 12px 0;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 12px; padding: 16px; margin: 10px 0;
         }
 
-        .portal-card {
-            position: relative;
+        .jump-card {
+            display: flex; justify-content: space-between;
+            align-items: center; flex-wrap: wrap; gap: 8px;
         }
 
-        .portal-card .status {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            padding: 4px 10px;
-            border-radius: 20px;
-            font-size: 0.75rem;
-            font-weight: bold;
-        }
+        .jump-id { font-family: monospace; color: #00d4ff; font-weight: bold; }
+        .jump-meta { font-size: 0.75rem; color: #667; }
+        .jump-stat { font-size: 0.8rem; color: #aab; }
 
-        .status.active {
-            background: rgba(0,255,100,0.2);
-            color: #00ff64;
-            border: 1px solid rgba(0,255,100,0.3);
+        .badge {
+            padding: 3px 8px; border-radius: 12px;
+            font-size: 0.65rem; font-weight: bold;
         }
+        .badge-ok { background: rgba(0,255,100,0.15); color: #0f8; }
 
-        .status.inactive {
-            background: rgba(255,50,50,0.2);
-            color: #ff5050;
-            border: 1px solid rgba(255,50,50,0.3);
-        }
-
-        .portal-name {
-            font-size: 1.2rem;
-            font-weight: bold;
-            margin-bottom: 8px;
-        }
-
-        .portal-details {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 8px;
-            margin-top: 10px;
-        }
-
-        .detail {
-            font-size: 0.85rem;
-            color: #aaa;
-        }
-
-        .detail strong {
-            color: #ddd;
-        }
-
-        /* Form */
-        .form-group {
-            margin: 12px 0;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 4px;
-            color: #aaa;
+        .empty {
+            text-align: center; color: #445; padding: 20px;
             font-size: 0.85rem;
         }
 
-        input, select, textarea {
-            width: 100%;
-            padding: 10px 12px;
-            background: rgba(255,255,255,0.08);
-            border: 1px solid rgba(255,255,255,0.15);
-            border-radius: 8px;
-            color: #fff;
-            font-size: 0.9rem;
-            outline: none;
-            transition: border-color 0.2s;
+        .stat-grid {
+            display: grid; grid-template-columns: 1fr 1fr;
+            gap: 10px; margin: 10px 0;
         }
 
-        input:focus, select:focus {
-            border-color: #00d4ff;
+        .stat-box {
+            background: rgba(0,212,255,0.05);
+            border: 1px solid rgba(0,212,255,0.1);
+            border-radius: 10px; padding: 14px; text-align: center;
         }
 
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
+        .stat-num {
+            font-size: 1.5rem; font-weight: bold;
+            color: #00d4ff; font-family: monospace;
         }
 
-        .days-selector {
-            display: flex;
-            gap: 6px;
-            flex-wrap: wrap;
-        }
-
-        .day-toggle {
-            padding: 6px 12px;
-            border-radius: 8px;
-            border: 1px solid rgba(255,255,255,0.2);
-            background: rgba(255,255,255,0.05);
-            color: #aaa;
-            cursor: pointer;
-            font-size: 0.8rem;
-            transition: all 0.2s;
-        }
-
-        .day-toggle.selected {
-            background: rgba(0,212,255,0.2);
-            border-color: #00d4ff;
-            color: #00d4ff;
+        .stat-label {
+            font-size: 0.6rem; color: #556;
+            letter-spacing: 1px; margin-top: 2px;
         }
 
         .btn {
-            padding: 10px 20px;
-            border-radius: 10px;
-            border: none;
-            cursor: pointer;
-            font-size: 0.9rem;
-            transition: all 0.2s;
+            display: block; width: 100%; padding: 12px;
+            border-radius: 10px; border: none;
+            font-size: 0.9rem; cursor: pointer; margin: 6px 0;
         }
 
-        .btn-add {
-            background: linear-gradient(135deg, #00d4ff, #7b2fff);
-            color: white;
-            width: 100%;
-            padding: 14px;
-            font-size: 1rem;
-            margin-top: 16px;
-        }
-
-        .btn-add:hover { transform: scale(1.02); }
-        .btn-add:active { transform: scale(0.98); }
-
-        .btn-gps {
-            background: rgba(0,212,255,0.2);
-            color: #00d4ff;
-            border: 1px solid rgba(0,212,255,0.3);
-            margin-top: 8px;
-        }
-
-        .btn-copy {
-            background: rgba(123,47,255,0.2);
-            color: #7b2fff;
-            border: 1px solid rgba(123,47,255,0.3);
-            width: 100%;
-            margin-top: 12px;
-        }
-
-        .btn-delete {
+        .btn-danger {
             background: rgba(255,50,50,0.15);
-            color: #ff5050;
-            border: 1px solid rgba(255,50,50,0.2);
-            font-size: 0.8rem;
-            padding: 6px 12px;
-            position: absolute;
-            bottom: 12px;
-            right: 12px;
+            color: #f55; border: 1px solid rgba(255,50,50,0.2);
         }
 
-        .output-area {
-            background: rgba(0,0,0,0.4);
-            border: 1px solid rgba(0,212,255,0.2);
-            border-radius: 8px;
-            padding: 16px;
-            font-family: 'SF Mono', 'Fira Code', monospace;
-            font-size: 0.75rem;
-            white-space: pre-wrap;
-            overflow-x: auto;
-            color: #00d4ff;
-            max-height: 400px;
-            overflow-y: auto;
-            margin-top: 8px;
+        .btn-export {
+            background: rgba(0,212,255,0.15);
+            color: #0df; border: 1px solid rgba(0,212,255,0.2);
         }
 
-        .info-banner {
-            background: rgba(0,212,255,0.1);
-            border: 1px solid rgba(0,212,255,0.2);
-            border-radius: 10px;
-            padding: 14px 16px;
-            font-size: 0.85rem;
-            color: #88ccee;
-            margin: 16px 0;
-            line-height: 1.5;
+        .settings-row {
+            display: flex; justify-content: space-between;
+            align-items: center; padding: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
         }
 
-        @media (max-width: 600px) {
-            .form-row { grid-template-columns: 1fr; }
-            .container { padding: 12px; }
+        .settings-label { font-size: 0.8rem; color: #aab; }
+
+        .settings-input {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px; padding: 6px 10px;
+            color: #fff; font-size: 0.85rem;
+            width: 100px; text-align: center;
+        }
+
+        a { color: #00d4ff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .footer {
+            text-align: center; color: #334;
+            font-size: 0.65rem; margin-top: 30px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🛠️ AR Portale — Panel Admina</h1>
+        <h1>🛠️ Quantum Teleport — Panel</h1>
 
-        <div class="info-banner">
-            ℹ️ Ten panel generuje kod do pliku <strong>portals.js</strong>.<br>
-            Dodaj portale poniżej → skopiuj wygenerowany kod → wklej do pliku.
+        <!-- Statystyki -->
+        <h2>📊 Statystyki</h2>
+        <div class="stat-grid">
+            <div class="stat-box">
+                <div class="stat-num" id="total-jumps">0</div>
+                <div class="stat-label">SKOKÓW ŁĄCZNIE</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-num" id="total-distance">0m</div>
+                <div class="stat-label">DYSTANS ŁĄCZNY</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-num" id="total-steps">0</div>
+                <div class="stat-label">KROKÓW ŁĄCZNIE</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-num" id="last-jump">---</div>
+                <div class="stat-label">OSTATNI SKOK</div>
+            </div>
         </div>
 
-        <!-- Istniejące portale -->
-        <h2>📋 Aktualnie skonfigurowane portale</h2>
-        <div id="portal-list"></div>
+        <!-- Historia skoków -->
+        <h2>📜 Historia skoków</h2>
+        <div id="jump-list"></div>
 
-        <!-- Dodaj nowy -->
-        <h2>➕ Dodaj nowy portal</h2>
+        <!-- Ustawienia -->
+        <h2>⚙️ Ustawienia teleportu</h2>
         <div class="card">
-            <div class="form-group">
-                <label>Nazwa portalu</label>
-                <input type="text" id="f-name" placeholder="np. Smocza Brama">
+            <div class="settings-row">
+                <span class="settings-label">Dystans triggera (m)</span>
+                <input type="number" class="settings-input"
+                       id="set-distance" value="8" min="3" max="50">
             </div>
-
-            <div class="form-group">
-                <label>Opis</label>
-                <input type="text" id="f-desc" placeholder="np. Portal do smoczej jaskini">
+            <div class="settings-row">
+                <span class="settings-label">Czułość krokomierza</span>
+                <input type="number" class="settings-input"
+                       id="set-threshold" value="1.2" min="0.5" max="5" step="0.1">
             </div>
-
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Latitude (szerokość)</label>
-                    <input type="number" id="f-lat" step="0.000001" placeholder="52.229900">
-                </div>
-                <div class="form-group">
-                    <label>Longitude (długość)</label>
-                    <input type="number" id="f-lng" step="0.000001" placeholder="21.011700">
-                </div>
+            <div class="settings-row">
+                <span class="settings-label">Cooldown kroku (ms)</span>
+                <input type="number" class="settings-input"
+                       id="set-cooldown" value="300" min="100" max="1000" step="50">
             </div>
-
-            <button class="btn btn-gps" onclick="fillGPS()">
-                📍 Użyj mojej aktualnej lokalizacji
-            </button>
-
-            <div class="form-row" style="margin-top:12px;">
-                <div class="form-group">
-                    <label>Godzina startu</label>
-                    <input type="time" id="f-start" value="08:00">
-                </div>
-                <div class="form-group">
-                    <label>Godzina końca</label>
-                    <input type="time" id="f-end" value="22:00">
-                </div>
-            </div>
-
-            <div class="form-group">
-                <label>Dni tygodnia</label>
-                <div class="days-selector" id="days-selector">
-                    <span class="day-toggle selected" data-day="mon">Pn</span>
-                    <span class="day-toggle selected" data-day="tue">Wt</span>
-                    <span class="day-toggle selected" data-day="wed">Śr</span>
-                    <span class="day-toggle selected" data-day="thu">Cz</span>
-                    <span class="day-toggle selected" data-day="fri">Pt</span>
-                    <span class="day-toggle selected" data-day="sat">So</span>
-                    <span class="day-toggle selected" data-day="sun">Nd</span>
-                </div>
-            </div>
-
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Kształt placeholder'a</label>
-                    <select id="f-shape">
-                        <option value="ring">Ring (pierścień)</option>
-                        <option value="torus">Torus</option>
-                        <option value="box">Box (prostokąt)</option>
-                        <option value="sphere">Sfera</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Kolor</label>
-                    <input type="color" id="f-color" value="#00d4ff">
-                </div>
-            </div>
-
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Rozmiar</label>
-                    <input type="number" id="f-size" value="5" min="1" max="50">
-                </div>
-                <div class="form-group">
-                    <label>Zasięg widoczności (m)</label>
-                    <input type="number" id="f-radius" value="500" min="10" max="5000">
-                </div>
-            </div>
-
-            <div class="form-group">
-                <label>Model 3D (.glb) — opcjonalnie</label>
-                <input type="text" id="f-model" placeholder="models/moj-portal.glb (zostaw puste = placeholder)">
-            </div>
-
-            <button class="btn btn-add" onclick="addPortal()">
-                ➕ Dodaj portal
+            <button class="btn btn-export" onclick="saveSettings()">
+                💾 Zapisz ustawienia
             </button>
         </div>
 
-        <!-- Wygenerowany kod -->
-        <h2>📤 Wygenerowany kod portals.js</h2>
-        <div class="card">
-            <button class="btn btn-copy" onclick="copyOutput()">
-                📋 Kopiuj do schowka
-            </button>
-            <div class="output-area" id="output"></div>
+        <!-- Akcje -->
+        <h2>🔧 Akcje</h2>
+        <button class="btn btn-export" onclick="exportData()">
+            📤 Eksportuj historię (JSON)
+        </button>
+        <button class="btn btn-danger" onclick="clearHistory()">
+            🗑️ Wyczyść historię skoków
+        </button>
+
+        <!-- Link do teleportu -->
+        <div class="card" style="text-align:center; margin-top:20px;">
+            <p style="font-size:0.8rem; color:#889;">Otwórz teleport:</p>
+            <a href="index.html" style="font-size:1.1rem;">🌀 Quantum Teleport →</a>
+        </div>
+
+        <div class="footer">
+            Quantum Teleport Interface v3.0<br>
+            Dane przechowywane lokalnie w przeglądarce
         </div>
     </div>
 
-    <script src="js/admin.js"></script>
+    <script>
+    // ── Load data ──
+    function getJumps() {
+        try { return JSON.parse(localStorage.getItem("qt-jumps") || "[]"); }
+        catch(e) { return []; }
+    }
+
+    function getSettings() {
+        try { return JSON.parse(localStorage.getItem("qt-settings") || "{}"); }
+        catch(e) { return {}; }
+    }
+
+    // ── Render stats ──
+    function renderStats() {
+        const jumps = getJumps();
+
+        document.getElementById("total-jumps").textContent = jumps.length;
+
+        const totalDist = jumps.reduce((s,j) => s + (j.distance||0), 0);
+        document.getElementById("total-distance").textContent =
+            totalDist >= 1000 ? (totalDist/1000).toFixed(1)+"km" : Math.round(totalDist)+"m";
+
+        const totalSteps = jumps.reduce((s,j) => s + (j.steps||0), 0);
+        document.getElementById("total-steps").textContent = totalSteps;
+
+        if (jumps.length > 0) {
+            const last = new Date(jumps[jumps.length-1].timestamp);
+            document.getElementById("last-jump").textContent =
+                last.toLocaleDateString("pl-PL", { day:'2-digit', month:'2-digit' });
+        }
+    }
+
+    // ── Render jump list ──
+    function renderJumps() {
+        const jumps = getJumps();
+        const list = document.getElementById("jump-list");
+
+        if (jumps.length === 0) {
+            list.innerHTML = '<div class="card empty">Brak skoków. Otwórz teleport i dokonaj pierwszego! 🌀</div>';
+            return;
+        }
+
+        list.innerHTML = jumps.slice().reverse().map(j => {
+            const date = new Date(j.timestamp);
+            const gps = j.gps
+                ? `${j.gps.lat.toFixed(4)}°N ${j.gps.lng.toFixed(4)}°E`
+                : "brak GPS";
+
+            return `
+            <div class="card jump-card">
+                <div>
+                    <div class="jump-id">${j.id}</div>
+                    <div class="jump-meta">${date.toLocaleString("pl-PL")} · ${gps}</div>
+                    <div class="jump-stat">
+                        👟 ${j.steps||0} kroków · 📏 ${(j.distance||0).toFixed(1)}m
+                        ${j.hasSelfie ? ' · 📸' : ''}
+                    </div>
+                </div>
+                <span class="badge badge-ok">✅ OK</span>
+            </div>`;
+        }).join("");
+    }
+
+    // ── Settings ──
+    function loadSettings() {
+        const s = getSettings();
+        if (s.triggerDistance) document.getElementById("set-distance").value = s.triggerDistance;
+        if (s.stepThreshold) document.getElementById("set-threshold").value = s.stepThreshold;
+        if (s.stepCooldown) document.getElementById("set-cooldown").value = s.stepCooldown;
+    }
+
+    function saveSettings() {
+        const settings = {
+            triggerDistance: parseFloat(document.getElementById("set-distance").value),
+            stepThreshold: parseFloat(document.getElementById("set-threshold").value),
+            stepCooldown: parseInt(document.getElementById("set-cooldown").value)
+        };
+        localStorage.setItem("qt-settings", JSON.stringify(settings));
+        alert("✅ Ustawienia zapisane!\nBędą użyte przy następnym skoku.");
+    }
+
+    // ── Actions ──
+    function exportData() {
+        const data = {
+            jumps: getJumps(),
+            settings: getSettings(),
+            exported: new Date().toISOString()
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "quantum-teleport-data.json";
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    function clearHistory() {
+        if (confirm("Na pewno wyczyścić całą historię skoków?")) {
+            localStorage.removeItem("qt-jumps");
+            renderStats();
+            renderJumps();
+            alert("Historia wyczyszczona.");
+        }
+    }
+
+    // ── Init ──
+    renderStats();
+    renderJumps();
+    loadSettings();
+
+    // Auto-refresh co 5s (gdyby skok został dokonany w innej karcie)
+    setInterval(() => { renderStats(); renderJumps(); }, 5000);
+    </script>
 </body>
 </html>
