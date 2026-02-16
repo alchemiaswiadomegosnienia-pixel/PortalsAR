@@ -1068,7 +1068,7 @@ class QuantumTeleporter {
                 `${this.gpsPosition.lat.toFixed(6)}°N  ${this.gpsPosition.lng.toFixed(6)}°E`);
         }
 
-        field("STATUS", "✅ TELEPORTACJA ZAKOŃCZONA SUKCESEM", "#00ff88");
+        field("STATUS", "✅ TELEPORTACJA ZAKOŃCZONA SUKCESEM!", "#00ff88");
 
         y += 5;
         this.drawCertLine(ctx, W, y); y += 15;
