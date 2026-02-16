@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=yes">
+    <title>🌀 AR Portale</title>
+
+    <!-- A-Frame + AR.js -->
+    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+    <script src="https://unpkg.com/aframe-look-at-component@0.8.0/dist/aframe-look-at-component.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+
+    <!-- Własne style -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <!-- ============ EKRAN ŁADOWANIA ============ -->
+    <div id="loading-screen">
+        <div class="loader-content">
+            <div class="spinner"></div>
+            <h1>🌀 AR Portale</h1>
+            <p id="loading-status">Inicjalizacja...</p>
+            <div class="permission-buttons" id="permission-buttons" style="display:none;">
+                <button id="btn-start" class="btn-primary">
+                    📸 Uruchom kamerę i GPS
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ HUD ============ -->
+    <div id="hud" style="display:none;">
+        <!-- Górny pasek -->
+        <div class="hud-top">
+            <div class="hud-status">
+                <span id="gps-status">📡 Szukam GPS...</span>
+                <span id="portal-count">🌀 0 portali</span>
+                <span id="time-display">🕐 --:--</span>
+            </div>
+        </div>
+
+        <!-- Dolny pasek -->
+        <div class="hud-bottom">
+            <button id="btn-camera-switch" class="hud-btn" title="Przełącz kamerę">
+                🔄 Kamera
+            </button>
+            <button id="btn-refresh" class="hud-btn" title="Odśwież portale">
+                🔃 Odśwież
+            </button>
+            <button id="btn-debug" class="hud-btn" title="Debug info">
+                🐛 Debug
+            </button>
+        </div>
+
+        <!-- Panel debug -->
+        <div id="debug-panel" style="display:none;">
+            <pre id="debug-info"></pre>
+            <button id="btn-close-debug" class="btn-small">✕ Zamknij</button>
+        </div>
+
+        <!-- Kompas / wskaźnik kierunku -->
+        <div id="direction-indicator" style="display:none;">
+            <div class="arrow">⬆</div>
+            <span id="direction-text">Portal: 120m →</span>
+        </div>
+    </div>
+
+    <!-- ============ SCENA AR ============ -->
+    <a-scene
+        id="ar-scene"
+        vr-mode-ui="enabled: false"
+        arjs="sourceType: webcam; 
+              videoTexture: true; 
+              debugUIEnabled: false;"
+        renderer="logarithmicDepthBuffer: true; 
+                  precision: medium;
+                  antialias: true;"
+        loading-screen="enabled: false"
+        style="display:none;"
+    >
+        <!-- Assets preload -->
+        <a-assets id="ar-assets" timeout="30000">
+            <!-- Modele będą ładowane dynamicznie -->
+        </a-assets>
+
+        <!-- Kamera GPS -->
+        <a-camera 
+            id="ar-camera"
+            gps-camera 
+            rotation-reader
+            look-controls-enabled="false"
+        ></a-camera>
+
+        <!-- Portale będą dodawane dynamicznie przez engine.js -->
+    </a-scene>
+
+    <!-- Skrypty -->
+    <script src="js/portals.js"></script>
+    <script src="js/engine.js"></script>
+</body>
+</html>
