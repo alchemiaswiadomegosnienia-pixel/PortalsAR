@@ -2,7 +2,8 @@
 <html lang="pl">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=yes, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, 
+          maximum-scale=1.0, user-scalable=no">
     <title>🌀 Quantum Teleport</title>
     <link rel="stylesheet" href="css/style.css">
 </head>
@@ -13,38 +14,59 @@
         <div class="intro-content">
             <div class="logo">🌀</div>
             <h1>QUANTUM TELEPORT</h1>
-            <p class="sub">Interfejs Skoku Kwantowego</p>
+            <p class="sub">Interfejs Skoku Kwantowego v3.0</p>
 
-            <div class="info-box" id="info-box">
+            <div class="info-box">
                 <div class="info-row">
-                    <span class="label">STATUS</span>
-                    <span class="value" id="status-val">ŁADOWANIE...</span>
+                    <span class="label">SYSTEM</span>
+                    <span class="value" id="status-val">SKANOWANIE...</span>
                 </div>
                 <div class="info-row">
-                    <span class="label">LOKALIZACJA</span>
+                    <span class="label">KAMERY</span>
+                    <span class="value" id="camera-val">---</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">SENSORY</span>
+                    <span class="value" id="sensor-val">---</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">GPS</span>
                     <span class="value" id="gps-val">---</span>
                 </div>
             </div>
 
+            <!-- Brave warning -->
+            <div id="brave-warning" style="display:none;">
+                <div class="warning-box">
+                    ⚠️ <strong>Brave Browser</strong><br>
+                    Sensory ruchu mogą być zablokowane.<br>
+                    Otwórz: <strong>brave://flags</strong><br>
+                    Szukaj: <strong>#enable-generic-sensor-extra-classes</strong><br>
+                    Ustaw na: <strong>Enabled</strong><br><br>
+                    Lub użyj Chrome / Firefox.
+                </div>
+            </div>
+
             <button id="btn-start" class="btn-main" disabled>
-                ⚡ OTWÓRZ PORTAL
+                ⚡ INICJALIZUJ TELEPORTACJĘ
             </button>
-            <p class="hint">Wyjdź na zewnątrz. Potrzebujesz kamery.</p>
+            
+            <p class="hint">
+                Wymagane: kamera tylna + przednia, GPS, sensory ruchu
+            </p>
         </div>
     </div>
 
-    <!-- FAZA 1: AR — tylna kamera, portal, podejście -->
+    <!-- FAZA 1: AR -->
     <div id="screen-ar" class="screen">
-        <video id="back-camera" autoplay playsinline></video>
-
-        <!-- Portal renderowany w CANVASIE na wideo -->
+        <video id="back-camera" autoplay playsinline muted></video>
         <canvas id="ar-canvas"></canvas>
 
-        <!-- HUD -->
         <div id="ar-hud">
             <div class="hud-top-bar">
                 <span id="hud-dist">--- m</span>
                 <span id="hud-status">TAPNIJ ABY POSTAWIĆ PORTAL</span>
+                <span id="hud-steps">👟 0</span>
             </div>
 
             <div id="crosshair">⊕</div>
@@ -53,23 +75,24 @@
                 <div id="approach-bar">
                     <div id="approach-fill"></div>
                 </div>
-                <span id="approach-text">Zbliżaj się do portalu...</span>
+                <span id="approach-text">Idź ku portalowi...</span>
             </div>
         </div>
     </div>
 
-    <!-- FAZA 2: TELEPORTACJA (flash) -->
+    <!-- FAZA 2: FLASH -->
     <div id="screen-flash" class="screen">
+        <canvas id="flash-canvas"></canvas>
         <div class="flash-content">
             <div class="flash-icon">⚡</div>
             <h2>SKOK KWANTOWY</h2>
-            <p>Teleportacja w toku...</p>
+            <p id="flash-sub">Stabilizacja koordynatów...</p>
         </div>
     </div>
 
-    <!-- FAZA 3: SELFIE — przednia kamera -->
+    <!-- FAZA 3: SELFIE -->
     <div id="screen-selfie" class="screen">
-        <video id="front-camera" autoplay playsinline></video>
+        <video id="front-camera" autoplay playsinline muted></video>
         <canvas id="selfie-canvas" style="display:none;"></canvas>
 
         <div class="selfie-overlay">
@@ -79,7 +102,7 @@
                 <div class="corner bl"></div>
                 <div class="corner br"></div>
             </div>
-            <p class="selfie-label">📸 Selfie po teleportacji</p>
+            <p class="selfie-label">📸 Dowód teleportacji</p>
             <button id="btn-capture" class="btn-main">📸 ZRÓB ZDJĘCIE</button>
             <button id="btn-skip-selfie" class="btn-ghost">Pomiń →</button>
         </div>
@@ -90,10 +113,14 @@
         <canvas id="cert-canvas"></canvas>
         <div class="cert-buttons">
             <button id="btn-download" class="btn-main">💾 POBIERZ CERTYFIKAT</button>
+            <button id="btn-share" class="btn-main btn-secondary" style="display:none;">
+                📤 UDOSTĘPNIJ
+            </button>
             <button id="btn-again" class="btn-ghost">🌀 Nowy skok</button>
         </div>
     </div>
 
+    <script src="js/audio.js"></script>
     <script src="js/engine.js"></script>
 </body>
 </html>
