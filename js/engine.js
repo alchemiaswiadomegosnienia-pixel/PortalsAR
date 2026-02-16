@@ -927,7 +927,39 @@ class QuantumTeleporter {
         }
     }
 
-    saveJump() {
+        async saveJump() {
+        // Generuj quantum signature
+        const qSig = this.generateQuantumSignature();
+
+        // Zarejestruj w ledger (blockchain-ready)
+        try {
+            const block = await ledger.registerJump({
+                jumpId: this.jumpId,
+                steps: this.stepCount,
+                distance: this.distanceWalked,
+                gps: this.gpsPosition,
+                quantumSignature: qSig,
+                selfieDataURL: this.selfieDataURL
+            });
+
+            // Zapisz block hash do użycia w certyfikacie
+            this.blockHash = block.hash;
+            this.blockIndex = block.index;
+            this.quantumSignature = qSig;
+
+            console.log("⛓️ Jump registered in Quantum Ledger");
+
+            // Weryfikuj integralność chain
+            const verification = await ledger.verifyChain();
+            console.log("⛓️ Chain integrity:", 
+                verification.valid ? "✅ VALID" : "❌ BROKEN");
+
+        } catch(e) {
+            console.warn("Ledger error:", e);
+            this.quantumSignature = qSig;
+        }
+
+        // Stary zapis (backup)
         try {
             const jumps = JSON.parse(localStorage.getItem("qt-jumps") || "[]");
             jumps.push({
@@ -936,12 +968,11 @@ class QuantumTeleporter {
                 steps: this.stepCount,
                 distance: this.distanceWalked,
                 gps: this.gpsPosition,
-                hasSelfie: !!this.selfieDataURL
+                hasSelfie: !!this.selfieDataURL,
+                blockHash: this.blockHash
             });
             localStorage.setItem("qt-jumps", JSON.stringify(jumps));
-        } catch(e) {
-            console.warn("Save error:", e);
-        }
+        } catch(e) {}
     }
 
         drawCert(ctx, canvas, selfieImg) {
@@ -1200,6 +1231,26 @@ class QuantumTeleporter {
             const hex = Math.abs(h).toString(16).toUpperCase().padStart(len, '0');
             return hex.substring(0, len);
         };
+                // ── Blockchain verification line ──
+        y += 3;
+        ctx.textAlign = "center";
+        ctx.font = "8px monospace";
+        ctx.fillStyle = "rgba(0,212,255,0.3)";
+        
+        if (this.blockHash) {
+            ctx.fillText(
+                `⛓ BLOCK #${this.blockIndex} · HASH: 0x${this.blockHash.substring(0,24)}...`,
+                W/2, y
+            );
+        } else {
+            ctx.fillText("⛓ CHAIN REGISTRATION PENDING", W/2, y);
+        }
+        y += 12;
+        ctx.fillStyle = "rgba(255,255,255,0.12)";
+        ctx.fillText(
+            "QTVP · Quantum Teleportation Verification Protocol",
+            W/2, y
+        );
 
         // Generuj timeline IDs (format: TL-XXXX-XXXX)
         const originTL = `TL-${hash(seed + "origin", 4)}-${hash(seed + "o2", 4)}`;
@@ -1233,7 +1284,13 @@ class QuantumTeleporter {
             planckOffset: `±${(1.616255e-35 * (1 + this.stepCount * 0.01)).toExponential(3)}m`,
             branchSignature: branchSig,
             multiverseSector: sector,
-            engineStatus: "CONNECTION AW"
+            engineStatus: "CONNECTION AW",
+            blockHash: this.blockHash 
+                    ? `0x${this.blockHash.substring(0, 16)}...` 
+                    : "⧗ PENDING",
+            blockIndex: this.blockIndex || 0,
+            chainProtocol: "QTVP v3.0",
+            verificationEndpoint: "quantum-teleport.app/verify/"
         };
     }
 
