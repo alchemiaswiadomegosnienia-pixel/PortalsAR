@@ -2,105 +2,98 @@
 <html lang="pl">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=yes">
-    <title>🌀 AR Portale</title>
-
-    <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-    <script src="https://unpkg.com/aframe-look-at-component@0.8.0/dist/aframe-look-at-component.min.js"></script>
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
-
+    <meta name="viewport" content="width=device-width, initial-scale=yes, user-scalable=no">
+    <title>🌀 Quantum Teleport</title>
     <link rel="stylesheet" href="css/style.css">
 </head>
-
 <body>
-    <!-- EKRAN STARTOWY -->
-    <div id="loading-screen">
-        <div class="loader-content">
-            <div class="spinner"></div>
-            <h1>🌀 AR Portale</h1>
-            <p id="loading-status">Przygotowuję...</p>
 
-            <div id="mode-select" style="display:none;">
-                <p style="margin-bottom:12px; color:#aaa;">Wybierz tryb:</p>
+    <!-- FAZA 0: INTRO -->
+    <div id="screen-intro" class="screen active">
+        <div class="intro-content">
+            <div class="logo">🌀</div>
+            <h1>QUANTUM TELEPORT</h1>
+            <p class="sub">Interfejs Skoku Kwantowego</p>
 
-                <button id="btn-demo" class="btn-primary" style="margin-bottom:10px;">
-                    🎮 DEMO — portale koło mnie
-                </button>
+            <div class="info-box" id="info-box">
+                <div class="info-row">
+                    <span class="label">STATUS</span>
+                    <span class="value" id="status-val">ŁADOWANIE...</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">LOKALIZACJA</span>
+                    <span class="value" id="gps-val">---</span>
+                </div>
+            </div>
 
-                <button id="btn-live" class="btn-primary" style="background: linear-gradient(135deg, #7b2fff, #ff2d55);">
-                    🌍 LIVE — prawdziwe lokalizacje
-                </button>
+            <button id="btn-start" class="btn-main" disabled>
+                ⚡ OTWÓRZ PORTAL
+            </button>
+            <p class="hint">Wyjdź na zewnątrz. Potrzebujesz kamery.</p>
+        </div>
+    </div>
 
-                <p style="margin-top:16px; font-size:0.75rem; color:#666;">
-                    Demo postawi portale 10-30m od Ciebie.<br>
-                    Live używa lokalizacji z panelu admina.
-                </p>
+    <!-- FAZA 1: AR — tylna kamera, portal, podejście -->
+    <div id="screen-ar" class="screen">
+        <video id="back-camera" autoplay playsinline></video>
+
+        <!-- Portal renderowany w CANVASIE na wideo -->
+        <canvas id="ar-canvas"></canvas>
+
+        <!-- HUD -->
+        <div id="ar-hud">
+            <div class="hud-top-bar">
+                <span id="hud-dist">--- m</span>
+                <span id="hud-status">TAPNIJ ABY POSTAWIĆ PORTAL</span>
+            </div>
+
+            <div id="crosshair">⊕</div>
+
+            <div id="approach-bar-wrap" style="display:none;">
+                <div id="approach-bar">
+                    <div id="approach-fill"></div>
+                </div>
+                <span id="approach-text">Zbliżaj się do portalu...</span>
             </div>
         </div>
     </div>
 
-    <!-- HUD -->
-    <div id="hud" style="display:none;">
-        <div class="hud-top">
-            <div class="hud-status">
-                <span id="gps-status">📡 GPS...</span>
-                <span id="portal-count">🌀 0</span>
-                <span id="time-display">🕐 --:--</span>
-                <span id="mode-badge">🎮 DEMO</span>
-            </div>
-        </div>
-
-        <!-- Kompas do najbliższego portalu -->
-        <div id="portal-finder" style="display:none;">
-            <div id="finder-arrow">➤</div>
-            <div id="finder-info">
-                <span id="finder-name">---</span><br>
-                <span id="finder-distance">---</span>
-            </div>
-        </div>
-
-        <div class="hud-bottom">
-            <button id="btn-place-here" class="hud-btn hud-btn-accent">
-                📌 Postaw tu
-            </button>
-            <button id="btn-refresh" class="hud-btn">
-                🔃
-            </button>
-            <button id="btn-admin" class="hud-btn" onclick="window.open('admin.html','_blank')">
-                ⚙️
-            </button>
-            <button id="btn-debug" class="hud-btn">
-                🐛
-            </button>
-        </div>
-
-        <div id="debug-panel" style="display:none;">
-            <pre id="debug-info"></pre>
-            <button id="btn-close-debug" class="btn-small">✕</button>
+    <!-- FAZA 2: TELEPORTACJA (flash) -->
+    <div id="screen-flash" class="screen">
+        <div class="flash-content">
+            <div class="flash-icon">⚡</div>
+            <h2>SKOK KWANTOWY</h2>
+            <p>Teleportacja w toku...</p>
         </div>
     </div>
 
-    <!-- SCENA AR -->
-    <a-scene
-        id="ar-scene"
-        vr-mode-ui="enabled: false"
-        arjs="sourceType: webcam;
-              videoTexture: true;
-              debugUIEnabled: false;"
-        renderer="logarithmicDepthBuffer: true;
-                  precision: medium;
-                  antialias: true;"
-        loading-screen="enabled: false"
-        style="display:none;"
-    >
-        <a-camera
-            id="ar-camera"
-            gps-camera="simulateLatitude: 0; simulateLongitude: 0;"
-            rotation-reader
-        ></a-camera>
-    </a-scene>
+    <!-- FAZA 3: SELFIE — przednia kamera -->
+    <div id="screen-selfie" class="screen">
+        <video id="front-camera" autoplay playsinline></video>
+        <canvas id="selfie-canvas" style="display:none;"></canvas>
 
-    <script src="js/portals.js"></script>
+        <div class="selfie-overlay">
+            <div class="selfie-frame">
+                <div class="corner tl"></div>
+                <div class="corner tr"></div>
+                <div class="corner bl"></div>
+                <div class="corner br"></div>
+            </div>
+            <p class="selfie-label">📸 Selfie po teleportacji</p>
+            <button id="btn-capture" class="btn-main">📸 ZRÓB ZDJĘCIE</button>
+            <button id="btn-skip-selfie" class="btn-ghost">Pomiń →</button>
+        </div>
+    </div>
+
+    <!-- FAZA 4: CERTYFIKAT -->
+    <div id="screen-cert" class="screen">
+        <canvas id="cert-canvas"></canvas>
+        <div class="cert-buttons">
+            <button id="btn-download" class="btn-main">💾 POBIERZ CERTYFIKAT</button>
+            <button id="btn-again" class="btn-ghost">🌀 Nowy skok</button>
+        </div>
+    </div>
+
     <script src="js/engine.js"></script>
 </body>
 </html>
