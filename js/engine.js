@@ -1276,7 +1276,56 @@ class QuantumTeleporter {
             }
         }
     }
+ this.drawCertLine(ctx, W, y); y += 25;
 
+        // ── Dane ──
+        ctx.textAlign = "left";
+        const dx = m + 55;
+
+        const field = (label, value, color) => {
+            ctx.font = "bold 10px monospace";
+            ctx.fillStyle = "rgba(255,255,255,0.3)";
+            ctx.fillText(label, dx, y); y += 20;
+            ctx.font = "bold 19px monospace";
+            ctx.fillStyle = color || "#00d4ff";
+            ctx.fillText(value, dx, y); y += 32;
+        };
+
+        field("IDENTYFIKATOR SKOKU", this.jumpId);
+        field("DATA I CZAS", now.toLocaleString("pl-PL", {
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit'
+        }));
+        field("DYSTANS PRZEJŚCIOWY",
+            `${this.distanceWalked.toFixed(1)}m (${this.stepCount} kroków)`);
+        
+        if (this.gpsPosition) {
+            field("WSPÓŁRZĘDNE ORIGIN",
+                `${this.gpsPosition.lat.toFixed(6)}°N  ${this.gpsPosition.lng.toFixed(6)}°E`);
+        }
+
+        field("STATUS TELEPORTACJI", "✅ ZAKOŃCZONA SUKCESEM", "#00ff88");
+
+        // ── Sygnatura kryptograficzna (fake ale fajnie wygląda) ──
+        y += 5;
+        this.drawCertLine(ctx, W, y); y += 20;
+
+        ctx.textAlign = "center";
+        ctx.font = "9px monospace";
+        ctx.fillStyle = "rgba(255,255,255,0.15)";
+
+        const hash = this.jumpId + "-" + Date.now().toString(36).toUpperCase() +
+                     "-" + (this.stepCount * 7 + 42).toString(16).toUpperCase();
+        ctx.fillText(`SYGNATURA: ${hash}`, W/2, y); y += 14;
+        ctx.fillText("Wygenerowano przez Quantum Teleport Interface v3.0", W/2, y); y += 14;
+        ctx.fillText("Ten dokument potwierdza pomyślne dokonanie skoku kwantowego.", W/2, y); y += 14;
+        ctx.fillText("Weryfikacja: quantum-teleport.app/verify/" + this.jumpId.toLowerCase(), W/2, y);
+
+        // ── Logo na dole ──
+        y = H - 70;
+        ctx.font = "36px serif";
+        ctx.fillText("🌀", W/2, y);
+    }
     drawCertLine(ctx, W, y) {
         const g = ctx.createLinearGradient(W*0.1, 0, W*0.9, 0);
         g.addColorStop(0, "rgba(0,212,255,0)");
