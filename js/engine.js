@@ -1333,6 +1333,20 @@ class QuantumTeleporter {
             }
         }
     }
+    drawCertLine(ctx, W, y) {
+        const g = ctx.createLinearGradient(W*0.1, 0, W*0.9, 0);
+        g.addColorStop(0, "rgba(0,212,255,0)");
+        g.addColorStop(0.3, "rgba(0,212,255,0.2)");
+        g.addColorStop(0.5, "rgba(123,47,255,0.3)");
+        g.addColorStop(0.7, "rgba(0,212,255,0.2)");
+        g.addColorStop(1, "rgba(0,212,255,0)");
+        ctx.strokeStyle = g;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(W*0.1, y); ctx.lineTo(W*0.9, y);
+        ctx.stroke();
+    }
+
     setupCertButtons(canvas) {
         // Download
         document.getElementById("btn-download").addEventListener("click", () => {
