@@ -1,52 +1,49 @@
 /**
- * ═══════════════════════════════════════
- *  QUANTUM TELEPORT ENGINE v2.2
+ * ═══════════════════════════════════
+ *  QUANTUM TELEPORT ENGINE v3.0
  *  
- *  FIX: motion detection
- * ═══════════════════════════════════════
+ *  - Brave compat
+ *  - Orientation fix (koło, nie elipsa)
+ *  - Audio integration
+ *  - Both cameras on init
+ *  - Multi-ring portal renderer
+ *  - Admin sync
+ * ═══════════════════════════════════
  */
 
 class QuantumTeleporter {
     constructor() {
-        // Portal
         this.portalPlaced = false;
         this.portalX = 0.5;
         this.portalY = 0.4;
         this.portalAngle = 0;
+        this.portalAngle2 = 0;
+        this.portalAngle3 = 0;
         this.portalPulse = 0;
 
-        // Ruch
         this.stepCount = 0;
         this.distanceWalked = 0;
         this.TRIGGER_DISTANCE = 8;
-        
-        // Detekcja kroków
-        this.accelBuffer = [];
-        this.lastStepTime = 0;
-        this.STEP_COOLDOWN = 300;    // ms między krokami
-        this.STEP_THRESHOLD = 1.5;   // czułość (niżej = czulej)
-        this.motionAvailable = false;
-        this.motionDebug = { x: 0, y: 0, z: 0, mag: 0, delta: 0 };
-        this.smoothedMagnitude = 9.81; // gravity
 
-        // Gyro
+        this.smoothedMag = 9.81;
+        this.lastStepTime = 0;
+        this.STEP_COOLDOWN = 300;
+        this.STEP_THRESHOLD = 1.2;
+        this.motionActive = false;
+
         this.gyroAlpha = 0;
         this.gyroBeta = 0;
         this.gyroGamma = 0;
-        this.gyroBaseAlpha = null;
-        this.gyroBaseBeta = null;
-        this.gyroBaseGamma = null;
-        this.gyroAvailable = false;
+        this.gyroBase = null;
+        this.gyroActive = false;
 
-        // GPS
         this.gpsPosition = null;
-
-        // Selfie
         this.selfieDataURL = null;
-
-        // Meta
         this.jumpId = this.makeId();
         this.animFrame = null;
+        this.phase = "intro";
+
+        this.isBrave = navigator.brave && navigator.brave.isBrave;
 
         this.init();
     }
@@ -61,97 +58,123 @@ class QuantumTeleporter {
     // ═════════════════════════
     //  INIT
     // ═════════════════════════
-    init() {
+    async init() {
+        // Brave detection
+        if (this.isBrave || /Brave/i.test(navigator.userAgent)) {
+            document.getElementById("brave-warning").style.display = "block";
+        }
+
         this.grabGPS();
-        this.preparePermissions();
+
+        // Test kamer (bez ich uruchomienia — tylko sprawdzenie)
+        await this.checkCameras();
+
+        const btn = document.getElementById("btn-start");
+        btn.disabled = false;
+        btn.addEventListener("click", () => this.requestAllPermissions());
     }
 
     grabGPS() {
-        if (!navigator.geolocation) return;
+        if (!navigator.geolocation) {
+            document.getElementById("gps-val").textContent = "NIEDOSTĘPNE";
+            return;
+        }
         navigator.geolocation.getCurrentPosition(
             pos => {
-                this.gpsPosition = {
-                    lat: pos.coords.latitude,
-                    lng: pos.coords.longitude
-                };
+                this.gpsPosition = { lat: pos.coords.latitude, lng: pos.coords.longitude };
                 document.getElementById("gps-val").textContent =
                     `${pos.coords.latitude.toFixed(4)}°N ${pos.coords.longitude.toFixed(4)}°E`;
+                document.getElementById("gps-val").style.color = "#0f8";
             },
-            () => {
-                document.getElementById("gps-val").textContent = "NIEDOSTĘPNE";
-            },
+            () => { document.getElementById("gps-val").textContent = "BRAK"; },
             { enableHighAccuracy: true, timeout: 10000 }
         );
     }
 
-    async preparePermissions() {
-        const statusEl = document.getElementById("status-val");
-        
-        // Na iOS trzeba poprosić o permission PRZEZ user gesture (kliknięcie)
-        // Więc nie robimy tego tu — robimy to w btn-start click handler
-        
-        // Sprawdź czy eventy w ogóle istnieją
-        const hasMotion = 'DeviceMotionEvent' in window;
-        const hasOrientation = 'DeviceOrientationEvent' in window;
-        
-        if (hasMotion && hasOrientation) {
-            statusEl.textContent = "✅ GOTOWY";
-            statusEl.style.color = "#0f8";
-        } else if (hasMotion || hasOrientation) {
-            statusEl.textContent = "⚠️ CZĘŚCIOWO GOTOWY";
-            statusEl.style.color = "#fa0";
-        } else {
-            statusEl.textContent = "⚠️ BRAK SENSORÓW (fallback)";
-            statusEl.style.color = "#fa0";
+    async checkCameras() {
+        const camVal = document.getElementById("camera-val");
+        try {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const cams = devices.filter(d => d.kind === 'videoinput');
+            camVal.textContent = `${cams.length} kamer znaleziono`;
+            camVal.style.color = cams.length >= 2 ? "#0f8" : "#fa0";
+        } catch(e) {
+            camVal.textContent = "SPRAWDZAM...";
         }
-
-        const btn = document.getElementById("btn-start");
-        btn.disabled = false;
-        btn.addEventListener("click", () => this.requestPermissionsAndStart());
     }
 
-    // ═════════════════════════════════════
-    //  PERMISSIONS (musi być w click handler!)
-    // ═════════════════════════════════════
-    async requestPermissionsAndStart() {
+    // ═══════════════════════════════════
+    //  PERMISSIONS — wszystko w 1 click
+    // ═══════════════════════════════════
+    async requestAllPermissions() {
         const btn = document.getElementById("btn-start");
         btn.disabled = true;
-        btn.textContent = "⏳ INICJALIZACJA...";
+        btn.textContent = "⏳ SPRAWDZAM...";
 
-        // ── iOS DeviceMotion permission ──
+        // 1. Audio (wymaga user gesture)
+        audio.init();
+
+        // 2. Tylna kamera
+        const camVal = document.getElementById("camera-val");
+        try {
+            const backStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: { ideal: "environment" } }
+            });
+            // Od razu zatrzymaj — użyjemy później
+            backStream.getTracks().forEach(t => t.stop());
+            camVal.textContent = "✅ Tylna OK";
+        } catch(e) {
+            camVal.textContent = "❌ Tylna: " + e.message;
+            camVal.style.color = "#f55";
+        }
+
+        // 3. Przednia kamera
+        try {
+            const frontStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "user" }
+            });
+            frontStream.getTracks().forEach(t => t.stop());
+            camVal.textContent += " | ✅ Przednia OK";
+        } catch(e) {
+            camVal.textContent += " | ⚠️ Przednia brak";
+        }
+
+        // 4. DeviceMotion
+        const sensorVal = document.getElementById("sensor-val");
+        
         if (typeof DeviceMotionEvent !== 'undefined' &&
             typeof DeviceMotionEvent.requestPermission === 'function') {
             try {
-                const motionPerm = await DeviceMotionEvent.requestPermission();
-                this.motionAvailable = (motionPerm === 'granted');
-                console.log("DeviceMotion permission:", motionPerm);
-            } catch (e) {
-                console.warn("DeviceMotion permission error:", e);
-                this.motionAvailable = false;
+                const perm = await DeviceMotionEvent.requestPermission();
+                this.motionActive = (perm === 'granted');
+            } catch(e) {
+                this.motionActive = false;
             }
         } else {
-            // Android — nie wymaga permission
-            this.motionAvailable = true;
+            this.motionActive = true;
         }
 
-        // ── iOS DeviceOrientation permission ──
+        // 5. DeviceOrientation
         if (typeof DeviceOrientationEvent !== 'undefined' &&
             typeof DeviceOrientationEvent.requestPermission === 'function') {
             try {
-                const orientPerm = await DeviceOrientationEvent.requestPermission();
-                this.gyroAvailable = (orientPerm === 'granted');
-                console.log("DeviceOrientation permission:", orientPerm);
-            } catch (e) {
-                console.warn("DeviceOrientation permission error:", e);
-                this.gyroAvailable = false;
+                const perm = await DeviceOrientationEvent.requestPermission();
+                this.gyroActive = (perm === 'granted');
+            } catch(e) {
+                this.gyroActive = false;
             }
         } else {
-            this.gyroAvailable = true;
+            this.gyroActive = true;
         }
 
-        console.log(`Sensors: motion=${this.motionAvailable}, gyro=${this.gyroAvailable}`);
+        sensorVal.textContent = 
+            `Motion: ${this.motionActive ? '✅' : '❌'} | Gyro: ${this.gyroActive ? '✅' : '❌'}`;
+        sensorVal.style.color = (this.motionActive && this.gyroActive) ? "#0f8" : "#fa0";
 
-        // Teraz uruchom AR
+        document.getElementById("status-val").textContent = "✅ GOTOWY";
+        document.getElementById("status-val").style.color = "#0f8";
+
+        // Start
         this.startAR();
     }
 
@@ -159,50 +182,48 @@ class QuantumTeleporter {
     //  FAZA 1: AR
     // ═════════════════════════
     async startAR() {
+        this.phase = "ar";
+
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    facingMode: { ideal: "environment" },
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
-                },
+                video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
                 audio: false
             });
             const video = document.getElementById("back-camera");
             video.srcObject = stream;
             await video.play();
             this.backStream = stream;
-        } catch (e) {
-            alert("Brak dostępu do kamery: " + e.message);
+        } catch(e) {
+            alert("Kamera: " + e.message);
             return;
         }
 
         this.switchScreen("screen-ar");
+        this.setupCanvas();
+        this.startSensors();
 
-        // Canvas
+        // Tap
+        document.getElementById("ar-canvas").addEventListener("click", (e) => {
+            if (!this.portalPlaced) this.placePortal(e);
+        });
+
+        // Resize
+        window.addEventListener("resize", () => this.setupCanvas());
+        screen.orientation?.addEventListener("change", () => {
+            setTimeout(() => this.setupCanvas(), 200);
+        });
+
+        this.renderLoop();
+    }
+
+    setupCanvas() {
         const canvas = document.getElementById("ar-canvas");
-        // Poczekaj chwilę aż layout się ustali
-        await new Promise(r => setTimeout(r, 100));
         const rect = canvas.getBoundingClientRect();
         canvas.width = rect.width * devicePixelRatio;
         canvas.height = rect.height * devicePixelRatio;
         this.ctx = canvas.getContext("2d");
         this.canvasW = canvas.width;
         this.canvasH = canvas.height;
-
-        // Tap to place
-        canvas.addEventListener("click", (e) => {
-            if (!this.portalPlaced) {
-                this.placePortal(e);
-            }
-        });
-
-        // ── Start sensorów (PO uzyskaniu permissions) ──
-        this.startMotionDetection();
-        this.startGyro();
-
-        // Render loop
-        this.renderLoop();
     }
 
     placePortal(e) {
@@ -213,87 +234,79 @@ class QuantumTeleporter {
         this.distanceWalked = 0;
         this.stepCount = 0;
 
-        this.gyroBaseAlpha = this.gyroAlpha;
-        this.gyroBaseBeta = this.gyroBeta;
-        this.gyroBaseGamma = this.gyroGamma;
+        this.gyroBase = {
+            alpha: this.gyroAlpha,
+            beta: this.gyroBeta,
+            gamma: this.gyroGamma
+        };
 
         document.getElementById("approach-bar-wrap").style.display = "block";
         document.getElementById("hud-status").textContent = "IDŹ KU PORTALOWI";
 
+        audio.playPortalPlace();
+        audio.startPortalAmbient();
+
         if (navigator.vibrate) navigator.vibrate(50);
     }
 
-    // ═══════════════════════════════════════
-    //  MOTION DETECTION — naprawione
-    // ═══════════════════════════════════════
-    startMotionDetection() {
-        if (!this.motionAvailable) {
-            console.warn("Motion niedostępny — włączam fallback");
-            this.startManualFallback();
-            return;
+    // ═════════════════════════
+    //  SENSORY
+    // ═════════════════════════
+    startSensors() {
+        // ── Motion ──
+        if (this.motionActive) {
+            let fired = false;
+
+            const handler = (e) => {
+                fired = true;
+                const a = e.acceleration || e.accelerationIncludingGravity;
+                if (!a || a.x === null) return;
+                this.processMotion(a.x || 0, a.y || 0, a.z || 0, !!e.acceleration);
+            };
+
+            window.addEventListener("devicemotion", handler, true);
+
+            // Brave fallback check
+            setTimeout(() => {
+                if (!fired) {
+                    console.warn("devicemotion nie strzela — Brave?");
+                    this.motionActive = false;
+                    window.removeEventListener("devicemotion", handler);
+                    this.addFallbackButtons();
+                }
+            }, 2000);
+        } else {
+            this.addFallbackButtons();
         }
 
-        let eventFired = false;
+        // ── Gyro ──
+        if (this.gyroActive) {
+            let fired = false;
 
-        const handler = (event) => {
-            eventFired = true;
+            const handler = (e) => {
+                fired = true;
+                if (e.alpha !== null) this.gyroAlpha = e.alpha;
+                if (e.beta !== null) this.gyroBeta = e.beta;
+                if (e.gamma !== null) this.gyroGamma = e.gamma;
+            };
 
-            // Użyj accelerationIncludingGravity (szersze wsparcie)
-            // LUB acceleration (bez grawitacji — lepsze do kroków)
-            const acc = event.acceleration || event.accelerationIncludingGravity;
-            
-            if (!acc || acc.x === null) {
-                // Niektóre przeglądarki podają event ale null values
-                return;
-            }
+            window.addEventListener("deviceorientation", handler, true);
 
-            const x = acc.x || 0;
-            const y = acc.y || 0;
-            const z = acc.z || 0;
-
-            this.processMotion(x, y, z, !!event.acceleration);
-        };
-
-        window.addEventListener("devicemotion", handler, true);
-
-        // Sprawdź po 2s czy event w ogóle strzelił
-        setTimeout(() => {
-            if (!eventFired) {
-                console.warn("devicemotion nie strzelił — fallback");
-                window.removeEventListener("devicemotion", handler);
-                this.motionAvailable = false;
-                this.startManualFallback();
-            } else {
-                console.log("✅ devicemotion działa");
-            }
-        }, 2000);
+            setTimeout(() => {
+                if (!fired) {
+                    this.gyroActive = false;
+                    window.removeEventListener("deviceorientation", handler);
+                }
+            }, 2000);
+        }
     }
 
-    processMotion(x, y, z, isWithoutGravity) {
-        const magnitude = Math.sqrt(x*x + y*y + z*z);
-
-        // Debug
-        this.motionDebug = {
-            x: x.toFixed(2),
-            y: y.toFixed(2),
-            z: z.toFixed(2),
-            mag: magnitude.toFixed(2),
-            smooth: this.smoothedMagnitude.toFixed(2),
-            steps: this.stepCount
-        };
-
-        // Wygładź sygnał (low-pass filter)
+    processMotion(x, y, z, pure) {
+        const mag = Math.sqrt(x*x + y*y + z*z);
         const alpha = 0.2;
-        this.smoothedMagnitude = alpha * magnitude + (1 - alpha) * this.smoothedMagnitude;
-
-        // Oblicz odchylenie od wygładzonej wartości
-        const delta = Math.abs(magnitude - this.smoothedMagnitude);
-
-        this.motionDebug.delta = delta.toFixed(2);
-
-        // Próg detekcji kroku
-        // Jeśli mamy "czyste" przyspieszenie (bez grawitacji) → niższy próg
-        const threshold = isWithoutGravity ? this.STEP_THRESHOLD : this.STEP_THRESHOLD + 0.5;
+        this.smoothedMag = alpha * mag + (1 - alpha) * this.smoothedMag;
+        const delta = Math.abs(mag - this.smoothedMag);
+        const threshold = pure ? this.STEP_THRESHOLD : this.STEP_THRESHOLD + 0.5;
 
         if (delta > threshold) {
             const now = Date.now();
@@ -306,99 +319,61 @@ class QuantumTeleporter {
 
     registerStep() {
         this.stepCount++;
-        this.distanceWalked = this.stepCount * 0.7; // ~70cm na krok
+        this.distanceWalked = this.stepCount * 0.7;
+        document.getElementById("hud-steps").textContent = `👟 ${this.stepCount}`;
 
-        // Drobna wibracja przy kroku (feedback)
-        if (navigator.vibrate && this.stepCount <= 20) {
-            navigator.vibrate(15);
-        }
+        audio.playStep();
 
-        console.log(`👟 Krok #${this.stepCount} → ${this.distanceWalked.toFixed(1)}m`);
+        if (navigator.vibrate) navigator.vibrate(15);
     }
 
-    // ── Fallback: przyciski ręczne ──
-    startManualFallback() {
-        console.log("🔧 Manual fallback aktywny");
-
-        // Dodaj przycisk "krok" na ekranie
+    addFallbackButtons() {
         const wrap = document.getElementById("approach-bar-wrap");
-        
-        const fallbackInfo = document.createElement("div");
-        fallbackInfo.style.cssText = `
-            color: #fa0; font-size: 0.7rem; margin-bottom: 8px;
-            text-align: center;
-        `;
-        fallbackInfo.textContent = "⚠️ Sensory niedostępne — użyj przycisków:";
-
-        const btnWalk = document.createElement("button");
-        btnWalk.textContent = "👟 KROK";
-        btnWalk.style.cssText = `
-            background: rgba(0,212,255,0.2);
-            color: #0df; border: 1px solid rgba(0,212,255,0.4);
-            padding: 14px 40px; border-radius: 12px;
-            font-size: 1rem; cursor: pointer;
-            margin: 6px; pointer-events: auto;
-        `;
-        btnWalk.addEventListener("click", () => {
-            this.registerStep();
-            if (navigator.vibrate) navigator.vibrate(15);
-        });
-
-        const btnRun = document.createElement("button");
-        btnRun.textContent = "🏃 ×5";
-        btnRun.style.cssText = btnWalk.style.cssText;
-        btnRun.addEventListener("click", () => {
-            for (let i = 0; i < 5; i++) this.registerStep();
-            if (navigator.vibrate) navigator.vibrate([15,30,15]);
-        });
-
         wrap.style.display = "block";
-        wrap.prepend(fallbackInfo);
-        
-        const btnRow = document.createElement("div");
-        btnRow.style.cssText = "display:flex; justify-content:center; gap:8px; margin-bottom:8px;";
-        btnRow.appendChild(btnWalk);
-        btnRow.appendChild(btnRun);
-        wrap.prepend(btnRow);
-    }
 
-    // ═════════════════════════
-    //  ŻYROSKOP
-    // ═════════════════════════
-    startGyro() {
-        if (!this.gyroAvailable) {
-            console.warn("Gyro niedostępny");
-            return;
-        }
+        if (document.getElementById("fallback-btns")) return;
 
-        let eventFired = false;
+        const row = document.createElement("div");
+        row.id = "fallback-btns";
+        row.style.cssText = `
+            display:flex; justify-content:center; gap:10px;
+            margin-bottom:10px; pointer-events:auto;
+        `;
 
-        const handler = (e) => {
-            eventFired = true;
-            if (e.alpha !== null) this.gyroAlpha = e.alpha;
-            if (e.beta !== null) this.gyroBeta = e.beta;
-            if (e.gamma !== null) this.gyroGamma = e.gamma;
+        const makeBtn = (text, clicks) => {
+            const b = document.createElement("button");
+            b.textContent = text;
+            b.style.cssText = `
+                background: rgba(0,212,255,0.15); color: #0df;
+                border: 1px solid rgba(0,212,255,0.3);
+                padding: 14px 28px; border-radius: 12px;
+                font-size: 1rem; cursor: pointer;
+            `;
+            b.addEventListener("click", () => {
+                for (let i = 0; i < clicks; i++) this.registerStep();
+            });
+            return b;
         };
 
-        window.addEventListener("deviceorientation", handler, true);
+        row.appendChild(makeBtn("👟 KROK", 1));
+        row.appendChild(makeBtn("🏃 ×3", 3));
+        row.appendChild(makeBtn("🚀 ×5", 5));
+        wrap.prepend(row);
 
-        setTimeout(() => {
-            if (!eventFired) {
-                console.warn("deviceorientation nie strzelił");
-                this.gyroAvailable = false;
-            } else {
-                console.log("✅ deviceorientation działa");
-            }
-        }, 2000);
+        const info = document.createElement("div");
+        info.style.cssText = "color:#fa0; font-size:0.65rem; text-align:center; margin-bottom:6px;";
+        info.textContent = "⚠️ Sensory ruchu zablokowane — użyj przycisków";
+        wrap.prepend(info);
     }
 
     // ═════════════════════════
-    //  RENDER LOOP
+    //  RENDER
     // ═════════════════════════
     renderLoop() {
         this.animFrame = requestAnimationFrame(() => this.renderLoop());
 
         const ctx = this.ctx;
+        if (!ctx) return;
         const W = this.canvasW;
         const H = this.canvasH;
 
@@ -406,17 +381,16 @@ class QuantumTeleporter {
 
         if (!this.portalPlaced) {
             this.drawHint(ctx, W, H);
-            this.drawDebugOverlay(ctx, W, H);
             return;
         }
 
-        // Pozycja portalu z gyro
+        // Pozycja z gyro
         let px = this.portalX;
         let py = this.portalY;
 
-        if (this.gyroAvailable && this.gyroBaseGamma !== null) {
-            const dGamma = this.gyroGamma - this.gyroBaseGamma;
-            const dBeta = this.gyroBeta - this.gyroBaseBeta;
+        if (this.gyroActive && this.gyroBase) {
+            const dGamma = this.gyroGamma - this.gyroBase.gamma;
+            const dBeta = this.gyroBeta - this.gyroBase.beta;
             px -= (dGamma / 90) * 0.5;
             py += (dBeta / 90) * 0.3;
         }
@@ -424,169 +398,234 @@ class QuantumTeleporter {
         px = Math.max(0.1, Math.min(0.9, px));
         py = Math.max(0.1, Math.min(0.9, py));
 
-        // Rozmiar
+        // Rozmiar — ZAWSZE koło (min z W,H)
         const progress = Math.min(1, this.distanceWalked / this.TRIGGER_DISTANCE);
-        const minR = Math.min(W, H) * 0.08;
-        const maxR = Math.min(W, H) * 0.45;
+        const base = Math.min(W, H);
+        const minR = base * 0.08;
+        const maxR = base * 0.45;
         const radius = minR + (maxR - minR) * this.easeInOut(progress);
 
-        this.portalAngle += 0.02;
+        // Pulsacja
         this.portalPulse += 0.05;
         const pulse = 1 + Math.sin(this.portalPulse) * 0.03 * (1 + progress);
-
-        const screenX = px * W;
-        const screenY = py * H;
         const r = radius * pulse;
 
-        this.drawPortal(ctx, screenX, screenY, r, progress);
-        this.updateHUD(progress);
-        this.drawDebugOverlay(ctx, W, H);
+        const sx = px * W;
+        const sy = py * H;
 
-        if (progress >= 1) {
-            this.triggerTeleport();
-        }
+        // Obroty ringów
+        this.portalAngle += 0.015;
+        this.portalAngle2 -= 0.022;
+        this.portalAngle3 += 0.008;
+
+        this.drawPortal(ctx, sx, sy, r, progress);
+        this.updateHUD(progress);
+
+        // Audio intensity
+        audio.setAmbientIntensity(progress);
+
+        if (progress >= 1) this.triggerTeleport();
     }
 
     easeInOut(t) {
-        return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+        return t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
     }
 
     drawHint(ctx, W, H) {
         const t = Date.now() / 1000;
-        ctx.fillStyle = `rgba(0,212,255,${0.3 + Math.sin(t * 2) * 0.15})`;
-        ctx.font = `${18 * devicePixelRatio}px sans-serif`;
+        ctx.fillStyle = `rgba(0,212,255,${0.3 + Math.sin(t*2)*0.15})`;
+        ctx.font = `bold ${16 * devicePixelRatio}px sans-serif`;
         ctx.textAlign = "center";
-        ctx.fillText("👆 TAPNIJ aby postawić portal", W / 2, H * 0.5);
+        ctx.fillText("👆 TAPNIJ aby otworzyć portal", W/2, H*0.5);
     }
 
     // ══════════════════════════════
-    //  DEBUG OVERLAY (na canvasie)
-    // ══════════════════════════════
-    drawDebugOverlay(ctx, W, H) {
-        const d = this.motionDebug;
-        const fontSize = 10 * devicePixelRatio;
-        ctx.font = `${fontSize}px monospace`;
-        ctx.textAlign = "left";
-        ctx.fillStyle = "rgba(0,255,136,0.7)";
-
-        let y = 60 * devicePixelRatio;
-        const x = 10 * devicePixelRatio;
-        const lineH = fontSize * 1.3;
-
-        // Tło pod debug
-        ctx.fillStyle = "rgba(0,0,0,0.5)";
-        ctx.fillRect(x - 4, y - fontSize, 280 * devicePixelRatio, lineH * 10);
-
-        ctx.fillStyle = "rgba(0,255,136,0.8)";
-
-        const lines = [
-            `MOTION: ${this.motionAvailable ? '✅ ON' : '❌ OFF'}`,
-            `GYRO:   ${this.gyroAvailable ? '✅ ON' : '❌ OFF'}`,
-            `ACC:    x=${d.x} y=${d.y} z=${d.z}`,
-            `MAG:    ${d.mag}  smooth=${d.smooth}`,
-            `DELTA:  ${d.delta}  threshold=${this.STEP_THRESHOLD}`,
-            `STEPS:  ${this.stepCount}`,
-            `DIST:   ${this.distanceWalked.toFixed(1)}m / ${this.TRIGGER_DISTANCE}m`,
-            `PORTAL: ${this.portalPlaced ? 'PLACED' : 'WAITING'}`,
-            `GYRO β: ${this.gyroBeta.toFixed(1)} γ: ${this.gyroGamma.toFixed(1)}`
-        ];
-
-        lines.forEach(line => {
-            ctx.fillText(line, x, y);
-            y += lineH;
-        });
-    }
-
-    // ══════════════════════════════
-    //  RYSOWANIE PORTALU
+    //  NOWY RENDERER PORTALU
     // ══════════════════════════════
     drawPortal(ctx, cx, cy, r, progress) {
-        const time = Date.now() / 1000;
+        const t = Date.now() / 1000;
+        const dpr = devicePixelRatio;
 
-        // Poświata zewnętrzna
-        const glow = ctx.createRadialGradient(cx, cy, r * 0.8, cx, cy, r * 1.4);
-        glow.addColorStop(0, `rgba(0,212,255,${0.05 + progress * 0.1})`);
-        glow.addColorStop(1, "rgba(0,212,255,0)");
-        ctx.fillStyle = glow;
+        // ── 1. Zewnętrzna poświata ──
+        const outerGlow = ctx.createRadialGradient(cx, cy, r*0.7, cx, cy, r*1.6);
+        outerGlow.addColorStop(0, `rgba(0,212,255,${0.03 + progress*0.08})`);
+        outerGlow.addColorStop(0.5, `rgba(123,47,255,${0.02 + progress*0.04})`);
+        outerGlow.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = outerGlow;
         ctx.beginPath();
-        ctx.arc(cx, cy, r * 1.4, 0, Math.PI * 2);
+        ctx.arc(cx, cy, r*1.6, 0, Math.PI*2);
         ctx.fill();
 
-        // Ciemny środek
-        const inner = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 0.75);
-        inner.addColorStop(0, `rgba(5,5,20,${0.7 + progress * 0.25})`);
-        inner.addColorStop(0.7, `rgba(10,10,50,${0.5 + progress * 0.2})`);
-        inner.addColorStop(1, "rgba(0,212,255,0.1)");
-        ctx.fillStyle = inner;
+        // ── 2. Środek portalu (czarna dziura) ──
+        const hole = ctx.createRadialGradient(cx, cy, 0, cx, cy, r*0.7);
+        hole.addColorStop(0, `rgba(0,0,10,${0.85 + progress*0.1})`);
+        hole.addColorStop(0.5, `rgba(5,5,30,${0.6 + progress*0.2})`);
+        hole.addColorStop(0.8, `rgba(10,10,60,${0.3 + progress*0.1})`);
+        hole.addColorStop(1, "rgba(0,212,255,0.05)");
+        ctx.fillStyle = hole;
         ctx.beginPath();
-        ctx.arc(cx, cy, r * 0.75, 0, Math.PI * 2);
+        ctx.arc(cx, cy, r*0.7, 0, Math.PI*2);
         ctx.fill();
 
-        // Ring 1
-        ctx.strokeStyle = `rgba(0,212,255,${0.6 + Math.sin(time * 2) * 0.2})`;
-        ctx.lineWidth = 3 * devicePixelRatio;
+        // Spirala w środku
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(t * 0.5);
+        for (let i = 0; i < 3; i++) {
+            const spiralR = r * 0.6;
+            ctx.strokeStyle = `rgba(0,212,255,${0.05 + progress * 0.05})`;
+            ctx.lineWidth = 1 * dpr;
+            ctx.beginPath();
+            for (let a = 0; a < Math.PI * 4; a += 0.1) {
+                const sr = (a / (Math.PI * 4)) * spiralR;
+                const sx = Math.cos(a + i * (Math.PI * 2/3)) * sr;
+                const sy = Math.sin(a + i * (Math.PI * 2/3)) * sr;
+                if (a === 0) ctx.moveTo(sx, sy);
+                else ctx.lineTo(sx, sy);
+            }
+            ctx.stroke();
+        }
+        ctx.restore();
+
+        // ── 3. Ring główny (XY plane) ──
+        ctx.strokeStyle = `rgba(0,212,255,${0.7 + Math.sin(t*2)*0.2})`;
+        ctx.lineWidth = 3 * dpr;
         ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.arc(cx, cy, r, 0, Math.PI*2);
         ctx.stroke();
 
-        // Ring 2 obrócony
+        // ── 4. Ring obrócony (symulacja 3D — elipsa X) ──
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(this.portalAngle);
-        ctx.strokeStyle = `rgba(123,47,255,${0.5 + Math.sin(time * 3) * 0.2})`;
-        ctx.lineWidth = 2 * devicePixelRatio;
+        const tilt1 = 0.3 + Math.sin(t * 0.7) * 0.15;
+        ctx.strokeStyle = `rgba(123,47,255,${0.5 + Math.sin(t*3)*0.2})`;
+        ctx.lineWidth = 2.5 * dpr;
         ctx.beginPath();
-        ctx.ellipse(0, 0, r * 0.9, r * 0.85, 0, 0, Math.PI * 2);
+        ctx.ellipse(0, 0, r*0.92, r*0.92 * tilt1, 0, 0, Math.PI*2);
         ctx.stroke();
         ctx.restore();
 
-        // Ring 3
+        // ── 5. Ring obrócony (symulacja 3D — elipsa Y) ──
         ctx.save();
         ctx.translate(cx, cy);
-        ctx.rotate(-this.portalAngle * 0.7);
-        ctx.strokeStyle = `rgba(255,45,85,${0.3 + progress * 0.3})`;
-        ctx.lineWidth = 1.5 * devicePixelRatio;
-        ctx.setLineDash([10, 15]);
+        ctx.rotate(this.portalAngle2);
+        const tilt2 = 0.4 + Math.sin(t * 0.5 + 1) * 0.2;
+        ctx.strokeStyle = `rgba(255,45,85,${0.3 + progress*0.3 + Math.sin(t*2.5)*0.1})`;
+        ctx.lineWidth = 2 * dpr;
         ctx.beginPath();
-        ctx.ellipse(0, 0, r * 0.6, r * 0.55, 0, 0, Math.PI * 2);
+        ctx.ellipse(0, 0, r*0.85 * tilt2, r*0.85, 0, 0, Math.PI*2);
+        ctx.stroke();
+        ctx.restore();
+
+        // ── 6. Ring wewnętrzny (przerywany) ──
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(this.portalAngle3);
+        ctx.strokeStyle = `rgba(0,255,136,${0.2 + progress*0.3})`;
+        ctx.lineWidth = 1.5 * dpr;
+        ctx.setLineDash([8, 12]);
+        ctx.beginPath();
+        ctx.arc(0, 0, r*0.6, 0, Math.PI*2);
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.restore();
 
-        // Cząsteczki
-        const numP = 10 + Math.floor(progress * 10);
-        for (let i = 0; i < numP; i++) {
-            const a = (i / numP) * Math.PI * 2 + time * (1 + i * 0.1);
-            const d = r * (0.8 + Math.sin(time * 2 + i) * 0.15);
-            const ppx = cx + Math.cos(a) * d;
-            const ppy = cy + Math.sin(a) * d;
-            const sz = (1.5 + Math.sin(time * 3 + i * 2) * 1) * devicePixelRatio;
+        // ── 7. Ring najdalszy (ghost) ──
+        ctx.strokeStyle = `rgba(0,212,255,${0.1 + Math.sin(t*1.5)*0.05})`;
+        ctx.lineWidth = 1 * dpr;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r*1.15 + Math.sin(t*2)*3, 0, Math.PI*2);
+        ctx.stroke();
 
-            ctx.fillStyle = i % 3 === 0 ? "#00d4ff" : i % 3 === 1 ? "#7b2fff" : "#ff2d55";
-            ctx.globalAlpha = 0.4 + Math.sin(time * 4 + i) * 0.3;
+        // ── 8. Orbiting particles ──
+        const numP = 12 + Math.floor(progress * 12);
+        for (let i = 0; i < numP; i++) {
+            const a = (i / numP) * Math.PI*2 + t * (0.8 + i*0.05);
+            const orbitR = r * (0.75 + Math.sin(t*1.5 + i*0.7) * 0.2);
+
+            // Niektóre na innych "orbitach"
+            const layer = i % 3;
+            let ppx, ppy;
+            if (layer === 0) {
+                ppx = cx + Math.cos(a) * orbitR;
+                ppy = cy + Math.sin(a) * orbitR;
+            } else if (layer === 1) {
+                ppx = cx + Math.cos(a) * orbitR * 0.9;
+                ppy = cy + Math.sin(a) * orbitR * 0.4; // spłaszczona orbita
+            } else {
+                ppx = cx + Math.cos(a) * orbitR * 0.4;
+                ppy = cy + Math.sin(a) * orbitR * 0.9;
+            }
+
+            const sz = (1 + Math.sin(t*3 + i*2) * 0.8 + progress) * dpr;
+
+            ctx.fillStyle = ['#00d4ff', '#7b2fff', '#ff2d55', '#00ff88'][i % 4];
+            ctx.globalAlpha = 0.3 + Math.sin(t*4 + i) * 0.25 + progress*0.2;
             ctx.beginPath();
-            ctx.arc(ppx, ppy, sz, 0, Math.PI * 2);
+            ctx.arc(ppx, ppy, sz, 0, Math.PI*2);
             ctx.fill();
+
+            // Ślad cząsteczki
+            if (progress > 0.3) {
+                ctx.globalAlpha *= 0.3;
+                ctx.beginPath();
+                const tailA = a - 0.3;
+                const tx = layer === 0 ? cx + Math.cos(tailA)*orbitR :
+                           layer === 1 ? cx + Math.cos(tailA)*orbitR*0.9 :
+                                         cx + Math.cos(tailA)*orbitR*0.4;
+                const ty = layer === 0 ? cy + Math.sin(tailA)*orbitR :
+                           layer === 1 ? cy + Math.sin(tailA)*orbitR*0.4 :
+                                         cy + Math.sin(tailA)*orbitR*0.9;
+                ctx.moveTo(ppx, ppy);
+                ctx.lineTo(tx, ty);
+                ctx.strokeStyle = ctx.fillStyle;
+                ctx.lineWidth = sz * 0.5;
+                ctx.stroke();
+            }
         }
         ctx.globalAlpha = 1;
 
-        // Label
-        const fs = Math.max(12, r * 0.12);
+        // ── 9. Label ──
+        const fs = Math.max(11, r * 0.1);
         ctx.font = `bold ${fs}px monospace`;
         ctx.textAlign = "center";
-        ctx.fillStyle = "rgba(0,212,255,0.7)";
-        ctx.fillText("QUANTUM PORTAL", cx, cy - r - 12 * devicePixelRatio);
+        ctx.fillStyle = `rgba(0,212,255,${0.5 + progress*0.3})`;
+        ctx.fillText("⟨ QUANTUM PORTAL ⟩", cx, cy - r - 14*dpr);
 
         // Dystans
         const dist = Math.max(0, this.TRIGGER_DISTANCE - this.distanceWalked);
-        ctx.font = `${fs * 0.8}px monospace`;
-        ctx.fillStyle = dist < 2 ? "#0f8" : "#fff";
-        ctx.fillText(`${dist.toFixed(1)}m`, cx, cy + r + 20 * devicePixelRatio);
+        ctx.font = `bold ${fs * 1.2}px monospace`;
+        ctx.fillStyle = dist < 2 ? "#00ff88" : dist < 4 ? "#00d4ff" : "#ffffff";
+        ctx.fillText(`${dist.toFixed(1)}m`, cx, cy + r + 24*dpr);
 
-        // Efekt bliskości
-        if (progress > 0.7) {
-            ctx.fillStyle = `rgba(0,212,255,${(progress - 0.7) * 0.15})`;
+        // ── 10. Screen-wide effects przy zbliżaniu ──
+        if (progress > 0.5) {
+            // Edge vignette
+            const vig = ctx.createRadialGradient(
+                cx, cy, Math.min(this.canvasW, this.canvasH) * 0.3,
+                cx, cy, Math.min(this.canvasW, this.canvasH) * 0.8
+            );
+            vig.addColorStop(0, "rgba(0,0,0,0)");
+            vig.addColorStop(1, `rgba(0,212,255,${(progress-0.5)*0.12})`);
+            ctx.fillStyle = vig;
             ctx.fillRect(0, 0, this.canvasW, this.canvasH);
+        }
+
+        if (progress > 0.8) {
+            // Screen shake symulacja — cały canvas drga
+            const shake = (progress - 0.8) * 15;
+            const offX = (Math.random() - 0.5) * shake;
+            const offY = (Math.random() - 0.5) * shake;
+            ctx.save();
+            ctx.translate(offX, offY);
+            ctx.restore();
+
+            // Scan lines
+            ctx.fillStyle = `rgba(0,212,255,${(progress-0.8)*0.03})`;
+            for (let sy = 0; sy < this.canvasH; sy += 4*dpr) {
+                ctx.fillRect(0, sy, this.canvasW, 1*dpr);
+            }
         }
     }
 
@@ -594,8 +633,7 @@ class QuantumTeleporter {
         const dist = Math.max(0, this.TRIGGER_DISTANCE - this.distanceWalked);
         document.getElementById("hud-dist").textContent = `${dist.toFixed(1)} m`;
 
-        document.getElementById("approach-fill").style.width = (progress * 100) + "%";
-
+        document.getElementById("approach-fill").style.width = (progress*100) + "%";
         if (progress > 0.8) {
             document.getElementById("approach-fill").style.background =
                 "linear-gradient(90deg, #0f8, #0ff)";
@@ -603,16 +641,27 @@ class QuantumTeleporter {
 
         const txt = document.getElementById("approach-text");
         if (progress < 0.3) {
-            txt.textContent = `Idź ku portalowi... (${this.stepCount} kroków)`;
-        } else if (progress < 0.7) {
-            txt.textContent = `⚡ Portal reaguje (${this.stepCount} kroków)`;
+            txt.textContent = `Zbliżaj się do portalu... (${this.stepCount} kroków)`;
+            txt.style.color = "rgba(255,255,255,0.6)";
+        } else if (progress < 0.6) {
+            txt.textContent = `⚡ Portal reaguje na Twoją obecność`;
+            txt.style.color = "#0df";
+        } else if (progress < 0.85) {
+            txt.textContent = "⚡⚡ Pole kwantowe się stabilizuje...";
+            txt.style.color = "#0df";
         } else if (progress < 0.95) {
-            txt.textContent = "⚡⚡ PRAWIE NA MIEJSCU ⚡⚡";
+            txt.textContent = "⚡⚡⚡ PRAWIE NA MIEJSCU ⚡⚡⚡";
             txt.style.color = "#0f8";
         } else {
             txt.textContent = "🌀 PRZEKRACZASZ PORTAL...";
             txt.style.color = "#0ff";
         }
+
+        const status = document.getElementById("hud-status");
+        if (progress < 0.3) status.textContent = "NAWIGACJA";
+        else if (progress < 0.7) status.textContent = "⚡ ZBLIŻANIE";
+        else if (progress < 0.9) status.textContent = "⚡⚡ SYNCHRONIZACJA";
+        else status.textContent = "🌀 PRZEKROCZENIE";
     }
 
     // ═════════════════════════
@@ -624,21 +673,126 @@ class QuantumTeleporter {
 
         cancelAnimationFrame(this.animFrame);
 
-        if (this.backStream) {
-            this.backStream.getTracks().forEach(t => t.stop());
-        }
+        if (this.backStream) this.backStream.getTracks().forEach(t => t.stop());
 
-        if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 200]);
+        audio.playTeleport();
+
+        if (navigator.vibrate) navigator.vibrate([100,50,100,50,200,100,300]);
 
         this.switchScreen("screen-flash");
+        this.animateFlash();
 
-        setTimeout(() => this.startSelfie(), 2500);
+        setTimeout(() => this.startSelfie(), 3000);
+    }
+
+        animateFlash() {
+        const canvas = document.getElementById("flash-canvas");
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width * devicePixelRatio;
+        canvas.height = rect.height * devicePixelRatio;
+        const ctx = canvas.getContext("2d");
+        const W = canvas.width;
+        const H = canvas.height;
+        const start = Date.now();
+
+        const texts = [
+            "Stabilizacja koordynatów...",
+            "Tunelowanie kwantowe...",
+            "Dekompresja przestrzenna...",
+            "Rekonstrukcja materii...",
+            "Weryfikacja integralności..."
+        ];
+
+        const animate = () => {
+            const elapsed = (Date.now() - start) / 1000;
+            if (elapsed > 3) return; // koniec po 3s
+
+            ctx.clearRect(0, 0, W, H);
+
+            // Tło — pulsujące
+            const intensity = Math.sin(elapsed * 8) * 0.5 + 0.5;
+            const bgGrad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W,H)*0.7);
+            bgGrad.addColorStop(0, `rgba(0,212,255,${0.05 + intensity * 0.08})`);
+            bgGrad.addColorStop(0.3, `rgba(123,47,255,${0.03 + intensity * 0.05})`);
+            bgGrad.addColorStop(1, `rgba(0,0,0,0.95)`);
+            ctx.fillStyle = bgGrad;
+            ctx.fillRect(0, 0, W, H);
+
+            // Rozszerzający się ring
+            const ringR = (elapsed / 3) * Math.max(W, H) * 0.8;
+            const ringAlpha = Math.max(0, 1 - elapsed / 3);
+            ctx.strokeStyle = `rgba(0,212,255,${ringAlpha * 0.5})`;
+            ctx.lineWidth = 3 * devicePixelRatio;
+            ctx.beginPath();
+            ctx.arc(W/2, H/2, ringR, 0, Math.PI*2);
+            ctx.stroke();
+
+            // Drugi ring (opóźniony)
+            if (elapsed > 0.3) {
+                const r2 = ((elapsed - 0.3) / 2.7) * Math.max(W,H) * 0.8;
+                ctx.strokeStyle = `rgba(123,47,255,${ringAlpha * 0.4})`;
+                ctx.beginPath();
+                ctx.arc(W/2, H/2, r2, 0, Math.PI*2);
+                ctx.stroke();
+            }
+
+            // Trzeci ring
+            if (elapsed > 0.6) {
+                const r3 = ((elapsed - 0.6) / 2.4) * Math.max(W,H) * 0.8;
+                ctx.strokeStyle = `rgba(255,45,85,${ringAlpha * 0.3})`;
+                ctx.beginPath();
+                ctx.arc(W/2, H/2, r3, 0, Math.PI*2);
+                ctx.stroke();
+            }
+
+            // Cząsteczki lecące od centrum
+            for (let i = 0; i < 40; i++) {
+                const angle = (i / 40) * Math.PI * 2 + elapsed * 2;
+                const dist = (elapsed * 200 + i * 15) % Math.max(W, H);
+                const px = W/2 + Math.cos(angle) * dist;
+                const py = H/2 + Math.sin(angle) * dist;
+                const alpha = Math.max(0, 1 - dist / Math.max(W, H));
+                const size = (1 + Math.random()) * devicePixelRatio;
+
+                ctx.fillStyle = i % 3 === 0 ? `rgba(0,212,255,${alpha})` :
+                               i % 3 === 1 ? `rgba(123,47,255,${alpha})` :
+                                              `rgba(255,45,85,${alpha})`;
+                ctx.beginPath();
+                ctx.arc(px, py, size, 0, Math.PI*2);
+                ctx.fill();
+            }
+
+            // Scan lines
+            ctx.fillStyle = `rgba(0,212,255,${0.02 + intensity * 0.02})`;
+            for (let sy = 0; sy < H; sy += 3 * devicePixelRatio) {
+                ctx.fillRect(0, sy, W, 1);
+            }
+
+            // Flash na starcie
+            if (elapsed < 0.3) {
+                const flashAlpha = (1 - elapsed / 0.3) * 0.8;
+                ctx.fillStyle = `rgba(255,255,255,${flashAlpha})`;
+                ctx.fillRect(0, 0, W, H);
+            }
+
+            // Aktualizuj tekst statusu
+            const textIndex = Math.min(
+                Math.floor(elapsed / 3 * texts.length),
+                texts.length - 1
+            );
+            document.getElementById("flash-sub").textContent = texts[textIndex];
+
+            requestAnimationFrame(animate);
+        };
+
+        animate();
     }
 
     // ═════════════════════════
     //  SELFIE
     // ═════════════════════════
     async startSelfie() {
+        this.phase = "selfie";
         this.switchScreen("screen-selfie");
 
         try {
@@ -649,67 +803,111 @@ class QuantumTeleporter {
                     height: { ideal: 720 }
                 }
             });
+
             const video = document.getElementById("front-camera");
             video.srcObject = stream;
             await video.play();
             this.frontStream = stream;
 
             document.getElementById("btn-capture")
-                .addEventListener("click", () => this.captureSelfie());
+                .addEventListener("click", () => this.captureSelfie(), { once: true });
+
             document.getElementById("btn-skip-selfie")
                 .addEventListener("click", () => {
                     if (this.frontStream) this.frontStream.getTracks().forEach(t => t.stop());
                     this.generateCertificate(null);
-                });
+                }, { once: true });
 
-        } catch (e) {
+        } catch(e) {
+            console.warn("Front camera error:", e);
             this.generateCertificate(null);
         }
     }
 
     captureSelfie() {
+        audio.playShutter();
+
+        // Flash efekt
+        const overlay = document.querySelector(".selfie-overlay");
+        overlay.style.background = "rgba(255,255,255,0.8)";
+        setTimeout(() => overlay.style.background = "transparent", 150);
+
+        if (navigator.vibrate) navigator.vibrate(50);
+
         const video = document.getElementById("front-camera");
         const canvas = document.getElementById("selfie-canvas");
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         const ctx = canvas.getContext("2d");
 
+        // Lustro
         ctx.translate(canvas.width, 0);
         ctx.scale(-1, 1);
         ctx.drawImage(video, 0, 0);
         ctx.setTransform(1, 0, 0, 1, 0, 0);
 
+        // Overlay portalu na zdjęciu
         this.drawSelfieOverlay(ctx, canvas.width, canvas.height);
 
         if (this.frontStream) this.frontStream.getTracks().forEach(t => t.stop());
 
         this.selfieDataURL = canvas.toDataURL("image/jpeg", 0.92);
-        this.generateCertificate(this.selfieDataURL);
+        
+        // Małe opóźnienie na dramatyczny efekt
+        setTimeout(() => {
+            this.generateCertificate(this.selfieDataURL);
+        }, 500);
     }
 
     drawSelfieOverlay(ctx, w, h) {
+        // Gradient wokół
         const g = ctx.createRadialGradient(
-            w / 2, h / 2, Math.min(w, h) * 0.2,
-            w / 2, h / 2, Math.min(w, h) * 0.55
+            w/2, h/2, Math.min(w,h)*0.2,
+            w/2, h/2, Math.min(w,h)*0.6
         );
         g.addColorStop(0, "rgba(0,0,0,0)");
-        g.addColorStop(0.6, "rgba(0,212,255,0.05)");
-        g.addColorStop(1, "rgba(123,47,255,0.3)");
+        g.addColorStop(0.5, "rgba(0,212,255,0.05)");
+        g.addColorStop(0.8, "rgba(123,47,255,0.15)");
+        g.addColorStop(1, "rgba(0,0,0,0.4)");
         ctx.fillStyle = g;
         ctx.fillRect(0, 0, w, h);
 
-        ctx.strokeStyle = "rgba(0,212,255,0.5)";
+        // Ring portalu
+        ctx.strokeStyle = "rgba(0,212,255,0.6)";
         ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.arc(w / 2, h / 2, Math.min(w, h) * 0.38, 0, Math.PI * 2);
+        ctx.arc(w/2, h/2, Math.min(w,h)*0.38, 0, Math.PI*2);
         ctx.stroke();
+
+        // Drugi ring
+        ctx.strokeStyle = "rgba(123,47,255,0.4)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(w/2, h/2, Math.min(w,h)*0.42, 0, Math.PI*2);
+        ctx.stroke();
+
+        // Timestamp
+        ctx.fillStyle = "rgba(0,212,255,0.6)";
+        ctx.font = `bold ${Math.round(w*0.025)}px monospace`;
+        ctx.textAlign = "center";
+        ctx.fillText("⚡ QUANTUM JUMP ⚡", w/2, h*0.06);
+
+        ctx.fillStyle = "rgba(255,255,255,0.4)";
+        ctx.font = `${Math.round(w*0.02)}px monospace`;
+        ctx.fillText(new Date().toISOString(), w/2, h*0.96);
+        ctx.fillText(this.jumpId, w/2, h*0.93);
     }
 
     // ═════════════════════════
     //  CERTYFIKAT
     // ═════════════════════════
     generateCertificate(selfieURL) {
+        this.phase = "certificate";
         this.switchScreen("screen-cert");
+        audio.playSuccess();
+
+        // Zapisz skok do localStorage (historia + admin sync)
+        this.saveJump();
 
         const canvas = document.getElementById("cert-canvas");
         const ctx = canvas.getContext("2d");
@@ -729,146 +927,237 @@ class QuantumTeleporter {
         }
     }
 
+    saveJump() {
+        try {
+            const jumps = JSON.parse(localStorage.getItem("qt-jumps") || "[]");
+            jumps.push({
+                id: this.jumpId,
+                timestamp: new Date().toISOString(),
+                steps: this.stepCount,
+                distance: this.distanceWalked,
+                gps: this.gpsPosition,
+                hasSelfie: !!this.selfieDataURL
+            });
+            localStorage.setItem("qt-jumps", JSON.stringify(jumps));
+        } catch(e) {
+            console.warn("Save error:", e);
+        }
+    }
+
     drawCert(ctx, canvas, selfieImg) {
         const W = canvas.width;
         const H = canvas.height;
         const now = new Date();
 
-        // Tło
+        // ── Tło ──
         const bg = ctx.createLinearGradient(0, 0, W, H);
         bg.addColorStop(0, "#050510");
-        bg.addColorStop(0.5, "#0a0a2e");
-        bg.addColorStop(1, "#0d0520");
+        bg.addColorStop(0.4, "#0a0a2e");
+        bg.addColorStop(0.7, "#0d0520");
+        bg.addColorStop(1, "#050515");
         ctx.fillStyle = bg;
         ctx.fillRect(0, 0, W, H);
 
         // Siatka
-        ctx.strokeStyle = "rgba(0,212,255,0.04)";
+        ctx.strokeStyle = "rgba(0,212,255,0.03)";
         ctx.lineWidth = 1;
-        for (let i = 0; i < 30; i++) {
-            ctx.beginPath(); ctx.moveTo(0, i * (H / 30)); ctx.lineTo(W, i * (H / 30)); ctx.stroke();
+        for (let i = 0; i < 40; i++) {
+            ctx.beginPath(); ctx.moveTo(0, i*(H/40)); ctx.lineTo(W, i*(H/40)); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(i*(W/25), 0); ctx.lineTo(i*(W/25), H); ctx.stroke();
         }
 
-        // Ramka + narożniki
+        // Ramka
         const m = 40;
-        ctx.strokeStyle = "rgba(0,212,255,0.2)";
-        ctx.strokeRect(m, m, W - m * 2, H - m * 2);
+        ctx.strokeStyle = "rgba(0,212,255,0.15)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(m, m, W-m*2, H-m*2);
 
+        // Druga ramka (wewnętrzna)
+        ctx.strokeStyle = "rgba(123,47,255,0.08)";
+        ctx.strokeRect(m+10, m+10, W-m*2-20, H-m*2-20);
+
+        // Narożniki
         ctx.strokeStyle = "#00d4ff";
         ctx.lineWidth = 3;
-        const cs = 35;
+        const cs = 40;
         [[m,m,1,1],[W-m,m,-1,1],[m,H-m,1,-1],[W-m,H-m,-1,-1]].forEach(([x,y,dx,dy]) => {
             ctx.beginPath();
-            ctx.moveTo(x, y + dy * cs); ctx.lineTo(x, y); ctx.lineTo(x + dx * cs, y);
+            ctx.moveTo(x, y+dy*cs); ctx.lineTo(x, y); ctx.lineTo(x+dx*cs, y);
             ctx.stroke();
         });
 
-        let y = 100;
+        let y = 90;
 
+        // ── Ikona ──
         ctx.textAlign = "center";
-        ctx.font = "64px serif";
+        ctx.font = "72px serif";
         ctx.fillStyle = "#fff";
-        ctx.fillText("🌀", W / 2, y); y += 60;
+        ctx.fillText("🌀", W/2, y);
+        y += 65;
 
-        ctx.font = "bold 48px Arial";
-        ctx.fillStyle = "#fff";
-        ctx.fillText("CERTYFIKAT", W / 2, y); y += 45;
+        // ── Tytuł ──
+        ctx.font = "bold 52px 'Arial'";
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText("CERTYFIKAT", W/2, y);
+        y += 50;
 
-        ctx.font = "bold 30px Arial";
-        const tg = ctx.createLinearGradient(W * 0.2, 0, W * 0.8, 0);
-        tg.addColorStop(0, "#00d4ff"); tg.addColorStop(1, "#7b2fff");
+        // Gradient title
+        ctx.font = "bold 32px 'Arial'";
+        const tg = ctx.createLinearGradient(W*0.15, 0, W*0.85, 0);
+        tg.addColorStop(0, "#00d4ff");
+        tg.addColorStop(0.5, "#7b2fff");
+        tg.addColorStop(1, "#ff2d55");
         ctx.fillStyle = tg;
-        ctx.fillText("SKOKU KWANTOWEGO", W / 2, y); y += 25;
+        ctx.fillText("SKOKU KWANTOWEGO", W/2, y);
+        y += 28;
 
-        ctx.font = "14px monospace";
-        ctx.fillStyle = "rgba(255,255,255,0.25)";
-        ctx.fillText("QUANTUM TELEPORTATION CERTIFICATE", W / 2, y); y += 30;
+        ctx.font = "13px monospace";
+        ctx.fillStyle = "rgba(255,255,255,0.2)";
+        ctx.fillText("QUANTUM TELEPORTATION CERTIFICATE", W/2, y);
+        y += 25;
 
-        this.drawLine(ctx, W, y); y += 25;
+        // Linia
+        this.drawCertLine(ctx, W, y); y += 20;
 
-        // Selfie
+        // ── Selfie ──
         if (selfieImg) {
-            const pw = 440, ph = 330;
+            const pw = 460, ph = 345;
             const px = (W - pw) / 2;
-            ctx.strokeStyle = "rgba(0,212,255,0.4)";
-            ctx.lineWidth = 2;
-            ctx.strokeRect(px - 3, y - 3, pw + 6, ph + 6);
 
+            // Ramka zdjęcia
+            ctx.strokeStyle = "rgba(0,212,255,0.3)";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(px-4, y-4, pw+8, ph+8);
+
+            // Narożniki zdjęcia
+            ctx.strokeStyle = "#00d4ff";
+            ctx.lineWidth = 2;
+            const pcs = 15;
+            [[px,y,1,1],[px+pw,y,-1,1],[px,y+ph,1,-1],[px+pw,y+ph,-1,-1]].forEach(([x2,y2,dx,dy]) => {
+                ctx.beginPath();
+                ctx.moveTo(x2, y2+dy*pcs); ctx.lineTo(x2, y2); ctx.lineTo(x2+dx*pcs, y2);
+                ctx.stroke();
+            });
+
+            // Zdjęcie
             const sa = selfieImg.width / selfieImg.height;
             const da = pw / ph;
-            let sx=0,sy=0,sw=selfieImg.width,sh=selfieImg.height;
-            if (sa > da) { sw = selfieImg.height*da; sx=(selfieImg.width-sw)/2; }
-            else { sh = selfieImg.width/da; sy=(selfieImg.height-sh)/2; }
-            ctx.drawImage(selfieImg, sx,sy,sw,sh, px,y,pw,ph);
+            let sx=0,sy2=0,sw=selfieImg.width,sh=selfieImg.height;
+            if (sa > da) { sw=sh*da; sx=(selfieImg.width-sw)/2; }
+            else { sh=sw/da; sy2=(selfieImg.height-sh)/2; }
+            ctx.drawImage(selfieImg, sx,sy2,sw,sh, px,y,pw,ph);
 
-            y += ph + 15;
-            ctx.font = "11px monospace";
-            ctx.fillStyle = "rgba(255,255,255,0.25)";
+            y += ph + 18;
+            ctx.font = "10px monospace";
+            ctx.fillStyle = "rgba(255,255,255,0.2)";
             ctx.textAlign = "center";
-            ctx.fillText("MOMENT PRZEKROCZENIA PORTALU", W/2, y);
-            y += 25;
+            ctx.fillText("REJESTRACJA MOMENTU PRZEKROCZENIA PORTALU", W/2, y);
+            y += 22;
         }
 
-        this.drawLine(ctx, W, y); y += 30;
+        this.drawCertLine(ctx, W, y); y += 25;
 
-        // Dane
+        // ── Dane ──
         ctx.textAlign = "left";
-        const dx = m + 50;
-        const field = (label, value) => {
-            ctx.font = "bold 11px monospace";
-            ctx.fillStyle = "rgba(255,255,255,0.35)";
-            ctx.fillText(label, dx, y); y += 22;
-            ctx.font = "bold 20px monospace";
-            ctx.fillStyle = "#00d4ff";
-            ctx.fillText(value, dx, y); y += 35;
+        const dx = m + 55;
+
+        const field = (label, value, color) => {
+            ctx.font = "bold 10px monospace";
+            ctx.fillStyle = "rgba(255,255,255,0.3)";
+            ctx.fillText(label, dx, y); y += 20;
+            ctx.font = "bold 19px monospace";
+            ctx.fillStyle = color || "#00d4ff";
+            ctx.fillText(value, dx, y); y += 32;
         };
 
-        field("JUMP ID", this.jumpId);
-        field("DATA I CZAS", now.toLocaleString("pl-PL"));
-        field("DYSTANS", `${this.distanceWalked.toFixed(1)}m (${this.stepCount} kroków)`);
+        field("IDENTYFIKATOR SKOKU", this.jumpId);
+        field("DATA I CZAS", now.toLocaleString("pl-PL", {
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit'
+        }));
+        field("DYSTANS PRZEJŚCIOWY",
+            `${this.distanceWalked.toFixed(1)}m (${this.stepCount} kroków)`);
+        
         if (this.gpsPosition) {
-            field("GPS", `${this.gpsPosition.lat.toFixed(6)}°N  ${this.gpsPosition.lng.toFixed(6)}°E`);
+            field("WSPÓŁRZĘDNE ORIGIN",
+                `${this.gpsPosition.lat.toFixed(6)}°N  ${this.gpsPosition.lng.toFixed(6)}°E`);
         }
-        field("STATUS", "✅ TELEPORTACJA ZAKOŃCZONA SUKCESEM");
 
-        // Stopka
-        y = H - 100;
-        this.drawLine(ctx, W, y); y += 25;
+        field("STATUS TELEPORTACJI", "✅ ZAKOŃCZONA SUKCESEM", "#00ff88");
+
+        // ── Sygnatura kryptograficzna (fake ale fajnie wygląda) ──
+        y += 5;
+        this.drawCertLine(ctx, W, y); y += 20;
+
         ctx.textAlign = "center";
-        ctx.font = "10px monospace";
-        ctx.fillStyle = "rgba(255,255,255,0.2)";
-        ctx.fillText("Quantum Teleport Interface v2.2", W/2, y); y += 16;
-        ctx.fillText(`Sygnatura: ${this.jumpId}-${Date.now().toString(36).toUpperCase()}`, W/2, y);
+        ctx.font = "9px monospace";
+        ctx.fillStyle = "rgba(255,255,255,0.15)";
+
+        const hash = this.jumpId + "-" + Date.now().toString(36).toUpperCase() +
+                     "-" + (this.stepCount * 7 + 42).toString(16).toUpperCase();
+        ctx.fillText(`SYGNATURA: ${hash}`, W/2, y); y += 14;
+        ctx.fillText("Wygenerowano przez Quantum Teleport Interface v3.0", W/2, y); y += 14;
+        ctx.fillText("Ten dokument potwierdza pomyślne dokonanie skoku kwantowego.", W/2, y); y += 14;
+        ctx.fillText("Weryfikacja: quantum-teleport.app/verify/" + this.jumpId.toLowerCase(), W/2, y);
+
+        // ── Logo na dole ──
+        y = H - 70;
+        ctx.font = "36px serif";
+        ctx.fillText("🌀", W/2, y);
     }
 
-    drawLine(ctx, W, y) {
+    drawCertLine(ctx, W, y) {
         const g = ctx.createLinearGradient(W*0.1, 0, W*0.9, 0);
         g.addColorStop(0, "rgba(0,212,255,0)");
-        g.addColorStop(0.5, "rgba(0,212,255,0.3)");
+        g.addColorStop(0.3, "rgba(0,212,255,0.2)");
+        g.addColorStop(0.5, "rgba(123,47,255,0.3)");
+        g.addColorStop(0.7, "rgba(0,212,255,0.2)");
         g.addColorStop(1, "rgba(0,212,255,0)");
         ctx.strokeStyle = g;
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(W*0.1, y);
-        ctx.lineTo(W*0.9, y);
+        ctx.moveTo(W*0.1, y); ctx.lineTo(W*0.9, y);
         ctx.stroke();
     }
 
     setupCertButtons(canvas) {
+        // Download
         document.getElementById("btn-download").addEventListener("click", () => {
             const link = document.createElement("a");
             link.download = `quantum-teleport-${this.jumpId}.png`;
             link.href = canvas.toDataURL("image/png");
             link.click();
-        });
+        }, { once: true });
 
+        // Share
+        const shareBtn = document.getElementById("btn-share");
+        if (navigator.share && navigator.canShare) {
+            shareBtn.style.display = "block";
+            shareBtn.addEventListener("click", () => {
+                canvas.toBlob(async (blob) => {
+                    const file = new File([blob],
+                        `quantum-teleport-${this.jumpId}.png`,
+                        { type: "image/png" }
+                    );
+                    try {
+                        await navigator.share({
+                            title: "Certyfikat Skoku Kwantowego 🌀",
+                            text: `Dokonałem skoku kwantowego! ID: ${this.jumpId}`,
+                            files: [file]
+                        });
+                    } catch(e) { /* cancelled */ }
+                });
+            }, { once: true });
+        }
+
+        // Again
         document.getElementById("btn-again").addEventListener("click", () => {
             location.reload();
-        });
+        }, { once: true });
     }
 
     // ═════════════════════════
-    //  UTILITY
+    //  UTILS
     // ═════════════════════════
     switchScreen(id) {
         document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
@@ -876,5 +1165,5 @@ class QuantumTeleporter {
     }
 }
 
-// START
+// ═══ START ═══
 const teleporter = new QuantumTeleporter();
