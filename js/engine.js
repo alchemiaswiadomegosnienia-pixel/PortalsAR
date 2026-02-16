@@ -1,7 +1,9 @@
 /**
  * =============================================
- *  AR PORTAL ENGINE
- *  Silnik zarządzający portalami
+ *  AR PORTAL ENGINE v2
+ *  - Tryb DEMO (portale blisko Ciebie)
+ *  - Tryb LIVE (prawdziwe lokalizacje)
+ *  - localStorage sync z admin.html
  * =============================================
  */
 
@@ -11,88 +13,236 @@ class ARPortalEngine {
         this.userPosition = null;
         this.watchId = null;
         this.isRunning = false;
-        this.usingFrontCamera = false;
+        this.mode = "demo"; // "demo" lub "live"
+        this.demoPortals = [];
+        this.deviceHeading = 0;
 
         this.init();
     }
 
-    // ── Inicjalizacja ──
+    // ══════════════════════════════════
+    //  INIT
+    // ══════════════════════════════════
     init() {
-        const btnStart = document.getElementById("btn-start");
-        const permButtons = document.getElementById("permission-buttons");
+        this.updateLoadingStatus("Pobieram lokalizację...");
 
-        // Pokaż przycisk start
-        this.updateLoadingStatus("Kliknij aby uruchomić AR");
-        permButtons.style.display = "block";
-
-        btnStart.addEventListener("click", () => this.start());
-    }
-
-    async start() {
-        try {
-            this.updateLoadingStatus("Proszę o dostęp do kamery...");
-
-            // Sprawdź uprawnienia
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "environment" },
-                audio: false
-            });
-            stream.getTracks().forEach(t => t.stop());
-
-            this.updateLoadingStatus("Uruchamiam GPS...");
-
-            // GPS
-            if ("geolocation" in navigator) {
-                this.startGPS();
-            } else {
-                this.showToast("⚠️ GPS niedostępny — portale będą widoczne bez filtrowania lokalizacji");
-            }
-
-            this.updateLoadingStatus("Ładuję scenę AR...");
-
-            // Pokaż scenę AR
-            const scene = document.getElementById("ar-scene");
-            scene.style.display = "block";
-
-            // Czekaj aż A-Frame się załaduje
-            if (scene.hasLoaded) {
-                this.onSceneReady();
-            } else {
-                scene.addEventListener("loaded", () => this.onSceneReady());
-            }
-
-        } catch (err) {
-            console.error("Błąd startu:", err);
-            this.updateLoadingStatus(`❌ Błąd: ${err.message}`);
-            this.showToast("❌ Nie udało się uruchomić kamery. Sprawdź uprawnienia.");
+        // Najpierw pobierz GPS, potem pokaż menu
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                    this.userPosition = {
+                        lat: pos.coords.latitude,
+                        lng: pos.coords.longitude,
+                        accuracy: pos.coords.accuracy,
+                        altitude: pos.coords.altitude
+                    };
+                    console.log("📍 GPS ok:", this.userPosition);
+                    this.showModeSelect();
+                },
+                (err) => {
+                    console.warn("GPS error:", err);
+                    this.updateLoadingStatus("⚠️ Brak GPS — używam trybu demo");
+                    // Domyślna pozycja
+                    this.userPosition = { lat: 52.2297, lng: 21.0122, accuracy: 999 };
+                    this.showModeSelect();
+                },
+                { enableHighAccuracy: true, timeout: 10000 }
+            );
+        } else {
+            this.userPosition = { lat: 52.2297, lng: 21.0122, accuracy: 999 };
+            this.showModeSelect();
         }
     }
 
+    showModeSelect() {
+        document.querySelector(".spinner").style.display = "none";
+        this.updateLoadingStatus("");
+        document.getElementById("mode-select").style.display = "block";
+
+        document.getElementById("btn-demo").addEventListener("click", () => {
+            this.mode = "demo";
+            this.start();
+        });
+
+        document.getElementById("btn-live").addEventListener("click", () => {
+            this.mode = "live";
+            this.start();
+        });
+    }
+
+    // ══════════════════════════════════
+    //  START
+    // ══════════════════════════════════
+    async start() {
+        document.getElementById("mode-select").style.display = "none";
+        document.querySelector(".spinner").style.display = "block";
+        this.updateLoadingStatus("Uruchamiam kamerę AR...");
+
+        try {
+            // Sprawdź kamerę
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: "environment" }
+            });
+            stream.getTracks().forEach(t => t.stop());
+        } catch (err) {
+            this.updateLoadingStatus("❌ Brak dostępu do kamery: " + err.message);
+            return;
+        }
+
+        // W trybie DEMO wygeneruj portale blisko użytkownika
+        if (this.mode === "demo") {
+            this.generateDemoPortals();
+        }
+
+        // Uruchom ciągły GPS
+        this.startGPSWatch();
+
+        // Uruchom kompas
+        this.startCompass();
+
+        // Pokaż scenę AR
+        const scene = document.getElementById("ar-scene");
+        scene.style.display = "block";
+
+        if (scene.hasLoaded) {
+            this.onSceneReady();
+        } else {
+            scene.addEventListener("loaded", () => this.onSceneReady());
+        }
+    }
+
+    // ══════════════════════════════════
+    //  DEMO — generuj portale blisko
+    // ══════════════════════════════════
+    generateDemoPortals() {
+        if (!this.userPosition) return;
+
+        const lat = this.userPosition.lat;
+        const lng = this.userPosition.lng;
+
+        // 1 stopień ≈ 111km
+        // 0.0001° ≈ 11m
+        // Generujemy portale 10-40m od użytkownika
+
+        this.demoPortals = [
+            {
+                id: "demo-north",
+                name: "🔵 Portal Północny",
+                description: "10m na północ",
+                latitude: lat + 0.00010,   // ~11m na północ
+                longitude: lng,
+                model: null,
+                placeholder: { type: "ring", color: "#00d4ff", emissive: "#003366", width: 3, height: 4, opacity: 0.9 },
+                scale: { x: 4, y: 4, z: 4 },
+                animation: { property: "rotation", to: "0 360 0", loop: true, duration: 15000, easing: "linear" },
+                schedule: { startTime: "00:00", endTime: "23:59", days: ["mon","tue","wed","thu","fri","sat","sun"] },
+                visibilityRadius: 500,
+                particles: true
+            },
+            {
+                id: "demo-east",
+                name: "🟣 Portal Wschodni",
+                description: "20m na wschód",
+                latitude: lat,
+                longitude: lng + 0.00025,  // ~18m na wschód
+                model: null,
+                placeholder: { type: "torus", color: "#7b2fff", emissive: "#1a0040", width: 3, height: 3, opacity: 0.9 },
+                scale: { x: 5, y: 5, z: 5 },
+                animation: { property: "rotation", to: "360 360 0", loop: true, duration: 12000, easing: "linear" },
+                schedule: { startTime: "00:00", endTime: "23:59", days: ["mon","tue","wed","thu","fri","sat","sun"] },
+                visibilityRadius: 500,
+                particles: true
+            },
+            {
+                id: "demo-south",
+                name: "🔴 Portal Południowy",
+                description: "15m na południe",
+                latitude: lat - 0.00013,   // ~15m na południe
+                longitude: lng + 0.00005,
+                model: null,
+                placeholder: { type: "ring", color: "#ff2d55", emissive: "#440011", width: 3.5, height: 5, opacity: 0.9 },
+                scale: { x: 5, y: 5, z: 5 },
+                animation: { property: "rotation", to: "0 -360 0", loop: true, duration: 18000, easing: "linear" },
+                schedule: { startTime: "00:00", endTime: "23:59", days: ["mon","tue","wed","thu","fri","sat","sun"] },
+                visibilityRadius: 500,
+                particles: true
+            },
+            {
+                id: "demo-west",
+                name: "🟢 Portal Zachodni",
+                description: "25m na zachód",
+                latitude: lat + 0.00005,
+                longitude: lng - 0.00030,  // ~22m na zachód
+                model: null,
+                placeholder: { type: "torus", color: "#00ff88", emissive: "#003311", width: 2.5, height: 2.5, opacity: 0.9 },
+                scale: { x: 4, y: 4, z: 4 },
+                animation: { property: "rotation", to: "0 360 360", loop: true, duration: 10000, easing: "linear" },
+                schedule: { startTime: "00:00", endTime: "23:59", days: ["mon","tue","wed","thu","fri","sat","sun"] },
+                visibilityRadius: 500,
+                particles: true
+            }
+        ];
+
+        console.log("🎮 Wygenerowano demo portale:", this.demoPortals);
+    }
+
+    // ══════════════════════════════════
+    //  SCENA GOTOWA
+    // ══════════════════════════════════
     onSceneReady() {
         this.isRunning = true;
 
-        // Ukryj loading screen
+        // Ukryj loading
         document.getElementById("loading-screen").classList.add("hidden");
         document.getElementById("hud").style.display = "block";
+
+        // Badge trybu
+        document.getElementById("mode-badge").textContent =
+            this.mode === "demo" ? "🎮 DEMO" : "🌍 LIVE";
 
         // Załaduj portale
         this.refreshPortals();
 
+        // Pokaż finder
+        document.getElementById("portal-finder").style.display = "block";
+
         // Interwały
         setInterval(() => this.refreshPortals(), APP_CONFIG.scheduleCheckInterval);
-        setInterval(() => this.updateTimeDisplay(), 1000);
+        setInterval(() => this.updateHUD(), 1000);
         setInterval(() => this.updateDebugInfo(), 2000);
+        setInterval(() => this.updateFinder(), 500);
 
-        // Event listeners
+        // Przyciski
         this.setupButtons();
 
-        this.showToast("🌀 AR Portale aktywne!\nRozglądaj się dookoła.");
+        // Reloaduj portale z localStorage co 5s (gdyby admin je zmienił)
+        setInterval(() => this.reloadFromStorage(), 5000);
 
-        console.log("✅ AR Portal Engine uruchomiony");
+        const count = this.getActiveConfig().length;
+        this.showToast(`🌀 ${count} portali załadowanych!\nRozglądaj się dookoła 📱`);
     }
 
-    // ── GPS ──
-    startGPS() {
+    // ══════════════════════════════════
+    //  KONFIGURACJA — demo vs live
+    // ══════════════════════════════════
+    getActiveConfig() {
+        if (this.mode === "demo") {
+            return this.demoPortals;
+        } else {
+            // Live — przeładuj z localStorage
+            return loadPortalsConfig();
+        }
+    }
+
+    reloadFromStorage() {
+        if (this.mode !== "live") return;
+        PORTALS_CONFIG = loadPortalsConfig();
+    }
+
+    // ══════════════════════════════════
+    //  GPS
+    // ══════════════════════════════════
+    startGPSWatch() {
         this.watchId = navigator.geolocation.watchPosition(
             (pos) => {
                 this.userPosition = {
@@ -101,102 +251,151 @@ class ARPortalEngine {
                     accuracy: pos.coords.accuracy,
                     altitude: pos.coords.altitude
                 };
-                this.updateGPSStatus();
             },
-            (err) => {
-                console.warn("GPS error:", err);
-                document.getElementById("gps-status").textContent = "📡 GPS błąd";
-            },
-            {
-                enableHighAccuracy: true,
-                maximumAge: 10000,
-                timeout: 15000
-            }
+            (err) => console.warn("GPS watch error:", err),
+            { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
         );
     }
 
-    updateGPSStatus() {
-        if (!this.userPosition) return;
-        const acc = Math.round(this.userPosition.accuracy);
-        const emoji = acc < 10 ? "🟢" : acc < 30 ? "🟡" : "🔴";
-        document.getElementById("gps-status").textContent =
-            `${emoji} GPS ±${acc}m`;
-    }
+    // ══════════════════════════════════
+    //  KOMPAS
+    // ══════════════════════════════════
+    startCompass() {
+        const handler = (e) => {
+            if (e.alpha !== null) {
+                // alpha = 0-360, 0 = North
+                this.deviceHeading = e.alpha;
+            }
+        };
 
-    // ── Harmonogram ──
-    isPortalActive(portal) {
-        const now = new Date();
-        const schedule = portal.schedule;
-
-        // Sprawdź dzień tygodnia
-        const dayNames = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-        const today = dayNames[now.getDay()];
-        if (!schedule.days.includes(today)) return false;
-
-        // Sprawdź godzinę
-        const currentMinutes = now.getHours() * 60 + now.getMinutes();
-        const [startH, startM] = schedule.startTime.split(":").map(Number);
-        const [endH, endM] = schedule.endTime.split(":").map(Number);
-        const startMin = startH * 60 + startM;
-        const endMin = endH * 60 + endM;
-
-        if (startMin <= endMin) {
-            return currentMinutes >= startMin && currentMinutes <= endMin;
+        if (typeof DeviceOrientationEvent !== 'undefined' &&
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+            // iOS 13+ wymaga permission
+            DeviceOrientationEvent.requestPermission()
+                .then(response => {
+                    if (response === 'granted') {
+                        window.addEventListener('deviceorientation', handler, true);
+                    }
+                }).catch(console.error);
         } else {
-            // Przez północ
-            return currentMinutes >= startMin || currentMinutes <= endMin;
+            window.addEventListener('deviceorientation', handler, true);
         }
     }
 
-    // ── Odległość (Haversine) ──
+    // ══════════════════════════════════
+    //  BEARING — kąt do portalu
+    // ══════════════════════════════════
+    getBearing(lat1, lon1, lat2, lon2) {
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+        const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+                  Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+        let brng = Math.atan2(y, x) * 180 / Math.PI;
+        return (brng + 360) % 360;
+    }
+
     getDistance(lat1, lon1, lat2, lon2) {
         const R = 6371000;
         const dLat = (lat2 - lat1) * Math.PI / 180;
         const dLon = (lon2 - lon1) * Math.PI / 180;
-        const a = Math.sin(dLat / 2) ** 2 +
-            Math.cos(lat1 * Math.PI / 180) *
-            Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon / 2) ** 2;
-        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const a = Math.sin(dLat/2)**2 +
+                  Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) *
+                  Math.sin(dLon/2)**2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
-    isInRange(portal) {
-        if (!this.userPosition) return true; // Bez GPS — pokaż wszystko
-        const dist = this.getDistance(
+    // ══════════════════════════════════
+    //  FINDER — wskaźnik kierunku
+    // ══════════════════════════════════
+    updateFinder() {
+        if (!this.userPosition) return;
+
+        const config = this.getActiveConfig();
+        if (config.length === 0) return;
+
+        // Znajdź najbliższy portal
+        let closest = null;
+        let closestDist = Infinity;
+
+        config.forEach(p => {
+            const dist = this.getDistance(
+                this.userPosition.lat, this.userPosition.lng,
+                p.latitude, p.longitude
+            );
+            if (dist < closestDist) {
+                closestDist = dist;
+                closest = p;
+            }
+        });
+
+        if (!closest) return;
+
+        const bearing = this.getBearing(
             this.userPosition.lat, this.userPosition.lng,
-            portal.latitude, portal.longitude
+            closest.latitude, closest.longitude
         );
-        return dist <= (portal.visibilityRadius || APP_CONFIG.defaultVisibilityRadius);
+
+        // Kąt strzałki = bearing - heading urządzenia
+        // (heading: 0 = north, bearing: 0 = north)
+        const arrowAngle = bearing - (360 - this.deviceHeading);
+
+        const arrow = document.getElementById("finder-arrow");
+        arrow.style.setProperty('--arrow-angle', `${arrowAngle}deg`);
+        arrow.style.transform = `rotate(${arrowAngle}deg)`;
+
+        document.getElementById("finder-name").textContent = closest.name;
+        document.getElementById("finder-distance").textContent =
+            closestDist < 1000
+                ? `${Math.round(closestDist)}m`
+                : `${(closestDist/1000).toFixed(1)}km`;
     }
 
-    getPortalDistance(portal) {
-        if (!this.userPosition) return null;
-        return this.getDistance(
-            this.userPosition.lat, this.userPosition.lng,
-            portal.latitude, portal.longitude
-        );
+    // ══════════════════════════════════
+    //  HARMONOGRAM
+    // ══════════════════════════════════
+    isPortalActive(portal) {
+        const now = new Date();
+        const schedule = portal.schedule;
+        const dayNames = ["sun","mon","tue","wed","thu","fri","sat"];
+        const today = dayNames[now.getDay()];
+
+        if (!schedule.days.includes(today)) return false;
+
+        const currentMin = now.getHours() * 60 + now.getMinutes();
+        const [sh, sm] = schedule.startTime.split(":").map(Number);
+        const [eh, em] = schedule.endTime.split(":").map(Number);
+        const startMin = sh * 60 + sm;
+        const endMin = eh * 60 + em;
+
+        if (startMin <= endMin) {
+            return currentMin >= startMin && currentMin <= endMin;
+        } else {
+            return currentMin >= startMin || currentMin <= endMin;
+        }
     }
 
-    // ── Zarządzanie portalami ──
+    // ══════════════════════════════════
+    //  SPAWN / DESPAWN
+    // ══════════════════════════════════
     refreshPortals() {
+        const config = this.getActiveConfig();
         let activeCount = 0;
 
-        PORTALS_CONFIG.forEach(portal => {
-            const shouldBeActive = this.isPortalActive(portal);
+        config.forEach(portal => {
+            const shouldShow = this.isPortalActive(portal);
             const isSpawned = this.activePortals.has(portal.id);
 
-            if (shouldBeActive && !isSpawned) {
+            if (shouldShow && !isSpawned) {
                 this.spawnPortal(portal);
                 activeCount++;
-            } else if (!shouldBeActive && isSpawned) {
+            } else if (!shouldShow && isSpawned) {
                 this.despawnPortal(portal.id);
-            } else if (shouldBeActive) {
+            } else if (shouldShow) {
                 activeCount++;
             }
         });
 
-        document.getElementById("portal-count").textContent =
-            `🌀 ${activeCount} portali`;
+        document.getElementById("portal-count").textContent = `🌀 ${activeCount}`;
     }
 
     spawnPortal(portal) {
@@ -204,176 +403,209 @@ class ARPortalEngine {
         const entity = document.createElement("a-entity");
 
         entity.setAttribute("id", portal.id);
-
-        // Geolokacja
         entity.setAttribute("gps-entity-place",
             `latitude: ${portal.latitude}; longitude: ${portal.longitude};`
         );
 
-        // Model lub placeholder
         if (portal.model) {
-            entity.setAttribute("gltf-model", `url(${portal.model})`);
+            entity.setAttribute("gltf-model", portal.model);
         } else {
-            this.createPlaceholder(entity, portal);
+            this.buildPlaceholder(entity, portal);
         }
 
-        // Skala
-        entity.setAttribute("scale",
-            `${portal.scale.x} ${portal.scale.y} ${portal.scale.z}`
-        );
+        const s = portal.scale || { x: 5, y: 5, z: 5 };
+        entity.setAttribute("scale", `${s.x} ${s.y} ${s.z}`);
 
-        // Patrz na kamerę
-        entity.setAttribute("look-at", "[gps-camera]");
-
-        // Animacja 1
         if (portal.animation) {
             entity.setAttribute("animation", portal.animation);
         }
 
-        // Animacja 2
-        if (portal.animation2) {
-            entity.setAttribute("animation__2", portal.animation2);
-        }
-
-        // Cząsteczki
-        if (portal.particles) {
-            this.addParticles(entity, portal);
-        }
-
         scene.appendChild(entity);
         this.activePortals.set(portal.id, entity);
-
-        console.log(`✅ Spawned: ${portal.name} (${portal.id})`);
+        console.log(`✅ Spawned: ${portal.name}`);
     }
 
-    createPlaceholder(entity, portal) {
-        const p = portal.placeholder;
+    buildPlaceholder(entity, portal) {
+        const p = portal.placeholder || {
+            type: "ring", color: "#00d4ff",
+            emissive: "#003366", width: 3, height: 4, opacity: 0.9
+        };
 
-        switch (p.type) {
-            case "ring":
-                // Zewnętrzny ring
-                const ring = document.createElement("a-ring");
-                ring.setAttribute("radius-inner", p.width / 2 - 0.2);
-                ring.setAttribute("radius-outer", p.width / 2);
-                ring.setAttribute("color", p.color);
-                ring.setAttribute("opacity", p.opacity);
-                ring.setAttribute("side", "double");
-                ring.setAttribute("segments-theta", 64);
-                entity.appendChild(ring);
+        // Główny kształt
+        if (p.type === "ring") {
+            const outer = document.createElement("a-ring");
+            outer.setAttribute("radius-inner", p.width / 2 - 0.3);
+            outer.setAttribute("radius-outer", p.width / 2);
+            outer.setAttribute("color", p.color);
+            outer.setAttribute("opacity", String(p.opacity));
+            outer.setAttribute("side", "double");
+            outer.setAttribute("segments-theta", "64");
+            entity.appendChild(outer);
 
-                // Wewnętrzna poświata
-                const glow = document.createElement("a-ring");
-                glow.setAttribute("radius-inner", 0);
-                glow.setAttribute("radius-outer", p.width / 2 - 0.2);
-                glow.setAttribute("color", p.emissive);
-                glow.setAttribute("opacity", 0.3);
-                glow.setAttribute("side", "double");
-                entity.appendChild(glow);
+            // Glow wewnątrz
+            const inner = document.createElement("a-ring");
+            inner.setAttribute("radius-inner", "0");
+            inner.setAttribute("radius-outer", String(p.width / 2 - 0.3));
+            inner.setAttribute("color", p.emissive || "#001133");
+            inner.setAttribute("opacity", "0.25");
+            inner.setAttribute("side", "double");
+            entity.appendChild(inner);
 
-                // Tekst nazwy
-                const text = document.createElement("a-text");
-                text.setAttribute("value", portal.name);
-                text.setAttribute("align", "center");
-                text.setAttribute("color", p.color);
-                text.setAttribute("width", "6");
-                text.setAttribute("position", `0 ${p.height / 2 + 0.5} 0`);
-                entity.appendChild(text);
-                break;
-
-            case "torus":
-                const torus = document.createElement("a-torus");
-                torus.setAttribute("radius", p.width / 2);
-                torus.setAttribute("radius-tubular", 0.15);
-                torus.setAttribute("color", p.color);
-                torus.setAttribute("opacity", p.opacity);
-                torus.setAttribute("segments-radial", 16);
-                torus.setAttribute("segments-tubular", 48);
-                entity.appendChild(torus);
-
-                const label = document.createElement("a-text");
-                label.setAttribute("value", portal.name);
-                label.setAttribute("align", "center");
-                label.setAttribute("color", p.color);
-                label.setAttribute("width", "6");
-                label.setAttribute("position", `0 ${p.width / 2 + 1} 0`);
-                entity.appendChild(label);
-                break;
-
-            case "box":
-                const box = document.createElement("a-box");
-                box.setAttribute("width", p.width);
-                box.setAttribute("height", p.height);
-                box.setAttribute("depth", 0.3);
-                box.setAttribute("color", p.color);
-                box.setAttribute("opacity", p.opacity);
-                entity.appendChild(box);
-                break;
-
-            case "sphere":
-                const sphere = document.createElement("a-sphere");
-                sphere.setAttribute("radius", p.width / 2);
-                sphere.setAttribute("color", p.color);
-                sphere.setAttribute("opacity", p.opacity);
-                sphere.setAttribute("segments-height", 18);
-                sphere.setAttribute("segments-width", 36);
-                entity.appendChild(sphere);
-                break;
+        } else if (p.type === "torus") {
+            const torus = document.createElement("a-torus");
+            torus.setAttribute("radius", String(p.width / 2));
+            torus.setAttribute("radius-tubular", "0.2");
+            torus.setAttribute("color", p.color);
+            torus.setAttribute("opacity", String(p.opacity));
+            torus.setAttribute("segments-tubular", "48");
+            entity.appendChild(torus);
         }
-    }
 
-    addParticles(entity, portal) {
-        // Symulacja cząsteczek za pomocą małych sfer
-        const color = portal.placeholder?.color || "#ffffff";
-        for (let i = 0; i < 8; i++) {
-            const particle = document.createElement("a-sphere");
-            const angle = (i / 8) * Math.PI * 2;
-            const radius = (portal.placeholder?.width || 2) / 2 + 0.5;
-            const x = Math.cos(angle) * radius;
-            const z = Math.sin(angle) * radius;
+        // Label
+        const label = document.createElement("a-text");
+        label.setAttribute("value", portal.name);
+        label.setAttribute("align", "center");
+        label.setAttribute("color", p.color);
+        label.setAttribute("width", "8");
+        label.setAttribute("position", `0 ${(p.height || p.width) / 2 + 1} 0`);
+        label.setAttribute("side", "double");
+        label.setAttribute("look-at", "[gps-camera]");
+        entity.appendChild(label);
 
-            particle.setAttribute("radius", 0.05);
-            particle.setAttribute("color", color);
-            particle.setAttribute("opacity", 0.7);
-            particle.setAttribute("position", `${x} 0 ${z}`);
-            particle.setAttribute("animation", {
-                property: "position",
-                to: `${x} ${1 + Math.random()} ${z}`,
-                dir: "alternate",
-                loop: true,
-                dur: 2000 + Math.random() * 2000,
-                easing: "easeInOutSine"
-            });
-            particle.setAttribute("animation__fade", {
-                property: "opacity",
-                from: 0.7,
-                to: 0.1,
-                dir: "alternate",
-                loop: true,
-                dur: 1500 + Math.random() * 1500
-            });
+        // Odległość
+        if (this.userPosition) {
+            const dist = this.getDistance(
+                this.userPosition.lat, this.userPosition.lng,
+                portal.latitude, portal.longitude
+            );
+            const distLabel = document.createElement("a-text");
+            distLabel.setAttribute("value", `${Math.round(dist)}m`);
+            distLabel.setAttribute("align", "center");
+            distLabel.setAttribute("color", "#ffffff");
+            distLabel.setAttribute("width", "5");
+            distLabel.setAttribute("position", `0 ${(p.height || p.width) / 2 + 0.3} 0`);
+            distLabel.setAttribute("side", "double");
+            distLabel.setAttribute("look-at", "[gps-camera]");
+            entity.appendChild(distLabel);
+        }
 
-            entity.appendChild(particle);
+        // Particles
+        if (portal.particles) {
+            for (let i = 0; i < 6; i++) {
+                const dot = document.createElement("a-sphere");
+                const angle = (i / 6) * Math.PI * 2;
+                const r = p.width / 2 + 0.3;
+                dot.setAttribute("radius", "0.08");
+                dot.setAttribute("color", p.color);
+                dot.setAttribute("opacity", "0.7");
+                dot.setAttribute("position",
+                    `${Math.cos(angle)*r} 0 ${Math.sin(angle)*r}`);
+                dot.setAttribute("animation", {
+                    property: "position",
+                    to: `${Math.cos(angle)*r} ${0.8+Math.random()} ${Math.sin(angle)*r}`,
+                    dir: "alternate", loop: true,
+                    dur: 1500 + Math.random() * 1500,
+                    easing: "easeInOutSine"
+                });
+                entity.appendChild(dot);
+            }
         }
     }
 
     despawnPortal(id) {
         const entity = this.activePortals.get(id);
-        if (entity) {
-            entity.remove();
-            this.activePortals.delete(id);
-            console.log(`⏹️ Despawned: ${id}`);
+        if (entity) { entity.remove(); this.activePortals.delete(id); }
+    }
+
+    // ══════════════════════════════════
+    //  POSTAW PORTAL TUTAJ
+    // ══════════════════════════════════
+    placePortalHere() {
+        if (!this.userPosition) {
+            this.showToast("❌ Brak GPS!");
+            return;
+        }
+
+        const colors = ["#00d4ff","#7b2fff","#ff2d55","#00ff88","#ffaa00"];
+        const shapes = ["ring","torus"];
+        const randomColor = colors[Math.floor(Math.random()*colors.length)];
+        const randomShape = shapes[Math.floor(Math.random()*shapes.length)];
+        const id = "placed-" + Date.now();
+
+        const newPortal = {
+            id: id,
+            name: "📌 Portal #" + (this.activePortals.size + 1),
+            description: "Postawiony ręcznie",
+            latitude: this.userPosition.lat,
+            longitude: this.userPosition.lng,
+            model: null,
+            placeholder: {
+                type: randomShape,
+                color: randomColor,
+                emissive: "#111111",
+                width: 3,
+                height: 4,
+                opacity: 0.9
+            },
+            scale: { x: 4, y: 4, z: 4 },
+            animation: {
+                property: "rotation",
+                to: "0 360 0",
+                loop: true,
+                duration: 15000,
+                easing: "linear"
+            },
+            schedule: {
+                startTime: "00:00",
+                endTime: "23:59",
+                days: ["mon","tue","wed","thu","fri","sat","sun"]
+            },
+            visibilityRadius: 500,
+            particles: true
+        };
+
+        // Dodaj do aktywnej konfiguracji
+        if (this.mode === "demo") {
+            this.demoPortals.push(newPortal);
+        }
+
+        // Zapisz też do localStorage
+        this.savePortalToStorage(newPortal);
+
+        // Spawn
+        this.spawnPortal(newPortal);
+
+        this.showToast(`📌 Portal postawiony!\nLat: ${this.userPosition.lat.toFixed(5)}\nLng: ${this.userPosition.lng.toFixed(5)}`);
+    }
+
+    savePortalToStorage(portal) {
+        try {
+            const saved = localStorage.getItem("ar-portals-config");
+            const list = saved ? JSON.parse(saved) : [];
+            list.push(portal);
+            localStorage.setItem("ar-portals-config", JSON.stringify(list));
+            console.log("💾 Portal zapisany do localStorage");
+        } catch(e) {
+            console.warn("Błąd zapisu:", e);
         }
     }
 
-    // ── Przyciski ──
+    // ══════════════════════════════════
+    //  PRZYCISKI
+    // ══════════════════════════════════
     setupButtons() {
-        document.getElementById("btn-camera-switch")
-            .addEventListener("click", () => this.switchCamera());
+        document.getElementById("btn-place-here")
+            .addEventListener("click", () => this.placePortalHere());
 
         document.getElementById("btn-refresh")
             .addEventListener("click", () => {
+                // Despawn wszystkiego
+                this.activePortals.forEach((_, id) => this.despawnPortal(id));
+                // W demo przebuduj pozycje
+                if (this.mode === "demo") this.generateDemoPortals();
+                // Reload
                 this.refreshPortals();
-                this.showToast("🔃 Portale odświeżone");
+                this.showToast("🔃 Odświeżono!");
             });
 
         document.getElementById("btn-debug")
@@ -383,150 +615,93 @@ class ARPortalEngine {
             .addEventListener("click", () => this.toggleDebug());
     }
 
-        switchCamera() {
-        this.usingFrontCamera = !this.usingFrontCamera;
-
-        this.showToast(
-            this.usingFrontCamera
-                ? "📸 Przednia kamera\n(ograniczone AR — brak depth)"
-                : "📸 Tylna kamera\n(pełne AR)"
-        );
-
-        // Restart strumienia wideo
-        const video = document.querySelector("video");
-        if (video && video.srcObject) {
-            video.srcObject.getTracks().forEach(t => t.stop());
-        }
-
-        navigator.mediaDevices.getUserMedia({
-            video: {
-                facingMode: this.usingFrontCamera ? "user" : "environment",
-                width: { ideal: 1280 },
-                height: { ideal: 720 }
-            }
-        }).then(stream => {
-            if (video) {
-                video.srcObject = stream;
-                video.play();
-            }
-        }).catch(err => {
-            console.error("Camera switch error:", err);
-            this.showToast("❌ Nie udało się przełączyć kamery");
-            this.usingFrontCamera = !this.usingFrontCamera;
-        });
-    }
-
-    // ── Debug ──
-    toggleDebug() {
-        const panel = document.getElementById("debug-panel");
-        panel.style.display = panel.style.display === "none" ? "block" : "none";
-        if (panel.style.display === "block") {
-            this.updateDebugInfo();
-        }
-    }
-
-    updateDebugInfo() {
-        const panel = document.getElementById("debug-info");
-        if (!panel || document.getElementById("debug-panel").style.display === "none") return;
-
+    // ══════════════════════════════════
+    //  HUD UPDATE
+    // ══════════════════════════════════
+    updateHUD() {
+        // Czas
         const now = new Date();
-        const dayNames = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-
-        let info = `═══ AR PORTAL ENGINE DEBUG ═══\n\n`;
-        info += `⏰ Czas: ${now.toLocaleTimeString()}\n`;
-        info += `📅 Dzień: ${dayNames[now.getDay()]}\n\n`;
+        document.getElementById("time-display").textContent =
+            `🕐 ${now.toLocaleTimeString('pl-PL', {hour:'2-digit', minute:'2-digit'})}`;
 
         // GPS
         if (this.userPosition) {
-            info += `📡 GPS:\n`;
-            info += `   Lat: ${this.userPosition.lat.toFixed(6)}\n`;
-            info += `   Lng: ${this.userPosition.lng.toFixed(6)}\n`;
-            info += `   Dokładność: ±${Math.round(this.userPosition.accuracy)}m\n`;
-            info += `   Wysokość: ${this.userPosition.altitude ? Math.round(this.userPosition.altitude) + 'm' : 'n/a'}\n\n`;
-        } else {
-            info += `📡 GPS: Brak danych\n\n`;
+            const acc = Math.round(this.userPosition.accuracy);
+            const emoji = acc < 15 ? "🟢" : acc < 40 ? "🟡" : "🔴";
+            document.getElementById("gps-status").textContent = `${emoji} ±${acc}m`;
+        }
+    }
+
+    // ══════════════════════════════════
+    //  DEBUG
+    // ══════════════════════════════════
+    toggleDebug() {
+        const p = document.getElementById("debug-panel");
+        p.style.display = p.style.display === "none" ? "block" : "none";
+    }
+
+    updateDebugInfo() {
+        const el = document.getElementById("debug-info");
+        if (!el || document.getElementById("debug-panel").style.display === "none") return;
+
+        const config = this.getActiveConfig();
+        let txt = `══ AR PORTAL ENGINE v2 ══\n\n`;
+        txt += `Mode: ${this.mode.toUpperCase()}\n`;
+        txt += `Time: ${new Date().toLocaleTimeString()}\n`;
+        txt += `Heading: ${Math.round(this.deviceHeading)}°\n\n`;
+
+        if (this.userPosition) {
+            txt += `GPS:\n`;
+            txt += `  ${this.userPosition.lat.toFixed(6)}, ${this.userPosition.lng.toFixed(6)}\n`;
+            txt += `  Accuracy: ±${Math.round(this.userPosition.accuracy)}m\n\n`;
         }
 
-        // Kamera
-        info += `📸 Kamera: ${this.usingFrontCamera ? 'Przednia' : 'Tylna'}\n\n`;
+        txt += `Portals (${config.length} configured, ${this.activePortals.size} spawned):\n`;
+        txt += `─────────────────────────\n`;
 
-        // Portale
-        info += `═══ PORTALE (${PORTALS_CONFIG.length} skonfigurowanych) ═══\n\n`;
+        config.forEach(p => {
+            const dist = this.userPosition
+                ? this.getDistance(this.userPosition.lat, this.userPosition.lng, p.latitude, p.longitude)
+                : null;
+            const bearing = this.userPosition
+                ? this.getBearing(this.userPosition.lat, this.userPosition.lng, p.latitude, p.longitude)
+                : null;
+            const spawned = this.activePortals.has(p.id);
 
-        PORTALS_CONFIG.forEach(portal => {
-            const active = this.isPortalActive(portal);
-            const spawned = this.activePortals.has(portal.id);
-            const dist = this.getPortalDistance(portal);
-            const inRange = this.isInRange(portal);
-
-            info += `${spawned ? '🟢' : active ? '🟡' : '🔴'} ${portal.name}\n`;
-            info += `   ID: ${portal.id}\n`;
-            info += `   Pozycja: ${portal.latitude}, ${portal.longitude}\n`;
-            info += `   Godziny: ${portal.schedule.startTime} - ${portal.schedule.endTime}\n`;
-            info += `   Dni: ${portal.schedule.days.join(', ')}\n`;
-            info += `   Aktywny wg harmonogramu: ${active ? 'TAK' : 'NIE'}\n`;
-            info += `   Wyświetlony: ${spawned ? 'TAK' : 'NIE'}\n`;
+            txt += `${spawned ? '🟢' : '⚫'} ${p.name}\n`;
+            txt += `   ${p.latitude.toFixed(6)}, ${p.longitude.toFixed(6)}\n`;
             if (dist !== null) {
-                info += `   Odległość: ${dist < 1000 ? Math.round(dist) + 'm' : (dist / 1000).toFixed(1) + 'km'}\n`;
-                info += `   W zasięgu (${portal.visibilityRadius}m): ${inRange ? 'TAK' : 'NIE'}\n`;
+                txt += `   Dist: ${Math.round(dist)}m | Bearing: ${Math.round(bearing)}°\n`;
             }
-            info += `\n`;
+            txt += `   Schedule: ${p.schedule.startTime}-${p.schedule.endTime}\n\n`;
         });
 
-        info += `═══ SYSTEM ═══\n`;
-        info += `Aktywnych portali: ${this.activePortals.size}\n`;
-        info += `Sprawdzanie co: ${APP_CONFIG.scheduleCheckInterval / 1000}s\n`;
-        info += `User Agent: ${navigator.userAgent.substring(0, 60)}...\n`;
+        txt += `localStorage portals: ${(localStorage.getItem("ar-portals-config") || "[]").length} bytes\n`;
 
-        panel.textContent = info;
+        el.textContent = txt;
     }
 
-    // ── Czas na HUD ──
-    updateTimeDisplay() {
-        const now = new Date();
-        document.getElementById("time-display").textContent =
-            `🕐 ${now.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}`;
-    }
-
-    // ── Loading status ──
+    // ══════════════════════════════════
+    //  UTILS
+    // ══════════════════════════════════
     updateLoadingStatus(text) {
         const el = document.getElementById("loading-status");
         if (el) el.textContent = text;
     }
 
-    // ── Toast notification ──
-    showToast(message, duration = 3000) {
-        // Usuń istniejące toasty
+    showToast(msg, dur = 3000) {
         document.querySelectorAll(".toast").forEach(t => t.remove());
-
-        const toast = document.createElement("div");
-        toast.className = "toast";
-        toast.textContent = message;
-        document.body.appendChild(toast);
-
-        // Animacja wejścia
-        requestAnimationFrame(() => {
-            toast.classList.add("show");
-        });
-
-        // Auto-ukryj
+        const t = document.createElement("div");
+        t.className = "toast";
+        t.textContent = msg;
+        document.body.appendChild(t);
+        requestAnimationFrame(() => t.classList.add("show"));
         setTimeout(() => {
-            toast.classList.remove("show");
-            setTimeout(() => toast.remove(), 300);
-        }, duration);
-    }
-
-    // ── Cleanup ──
-    destroy() {
-        if (this.watchId !== null) {
-            navigator.geolocation.clearWatch(this.watchId);
-        }
-        this.activePortals.forEach((entity, id) => {
-            this.despawnPortal(id);
-        });
-        this.isRunning = false;
+            t.classList.remove("show");
+            setTimeout(() => t.remove(), 300);
+        }, dur);
     }
 }
 
-// ── START ──
+// ══ START ══
 const engine = new ARPortalEngine();
