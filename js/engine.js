@@ -944,7 +944,7 @@ class QuantumTeleporter {
         }
     }
 
-        drawCert(ctx, canvas, selfieImg) {
+    drawCert(ctx, canvas, selfieImg) {
         const W = canvas.width;
         const H = canvas.height;
         const now = new Date();
@@ -966,11 +966,13 @@ class QuantumTeleporter {
             ctx.beginPath(); ctx.moveTo(i*(W/25), 0); ctx.lineTo(i*(W/25), H); ctx.stroke();
         }
 
-        // Ramki
+        // Ramka
         const m = 40;
         ctx.strokeStyle = "rgba(0,212,255,0.15)";
         ctx.lineWidth = 1;
         ctx.strokeRect(m, m, W-m*2, H-m*2);
+
+        // Druga ramka (wewnętrzna)
         ctx.strokeStyle = "rgba(123,47,255,0.08)";
         ctx.strokeRect(m+10, m+10, W-m*2-20, H-m*2-20);
 
@@ -984,41 +986,50 @@ class QuantumTeleporter {
             ctx.stroke();
         });
 
-        let y = 80;
+        let y = 90;
 
-        // ── Logo + Tytuł ──
+        // ── Ikona ──
         ctx.textAlign = "center";
-        ctx.font = "64px serif";
+        ctx.font = "72px serif";
         ctx.fillStyle = "#fff";
-        ctx.fillText("🌀", W/2, y); y += 55;
+        ctx.fillText("🌀", W/2, y);
+        y += 65;
 
-        ctx.font = "bold 46px Arial";
+        // ── Tytuł ──
+        ctx.font = "bold 52px 'Arial'";
         ctx.fillStyle = "#ffffff";
-        ctx.fillText("CERTYFIKAT", W/2, y); y += 44;
+        ctx.fillText("CERTYFIKAT", W/2, y);
+        y += 50;
 
-        ctx.font = "bold 28px Arial";
+        // Gradient title
+        ctx.font = "bold 32px 'Arial'";
         const tg = ctx.createLinearGradient(W*0.15, 0, W*0.85, 0);
         tg.addColorStop(0, "#00d4ff");
         tg.addColorStop(0.5, "#7b2fff");
         tg.addColorStop(1, "#ff2d55");
         ctx.fillStyle = tg;
-        ctx.fillText("SKOKU KWANTOWEGO", W/2, y); y += 22;
+        ctx.fillText("SKOKU KWANTOWEGO", W/2, y);
+        y += 28;
 
-        ctx.font = "12px monospace";
+        ctx.font = "13px monospace";
         ctx.fillStyle = "rgba(255,255,255,0.2)";
-        ctx.fillText("QUANTUM TELEPORTATION CERTIFICATE", W/2, y); y += 20;
+        ctx.fillText("QUANTUM TELEPORTATION CERTIFICATE", W/2, y);
+        y += 25;
 
-        this.drawCertLine(ctx, W, y); y += 18;
+        // Linia
+        this.drawCertLine(ctx, W, y); y += 20;
 
         // ── Selfie ──
         if (selfieImg) {
-            const pw = 420, ph = 315;
+            const pw = 460, ph = 345;
             const px = (W - pw) / 2;
 
+            // Ramka zdjęcia
             ctx.strokeStyle = "rgba(0,212,255,0.3)";
             ctx.lineWidth = 2;
             ctx.strokeRect(px-4, y-4, pw+8, ph+8);
 
+            // Narożniki zdjęcia
             ctx.strokeStyle = "#00d4ff";
             ctx.lineWidth = 2;
             const pcs = 15;
@@ -1028,6 +1039,7 @@ class QuantumTeleporter {
                 ctx.stroke();
             });
 
+            // Zdjęcie
             const sa = selfieImg.width / selfieImg.height;
             const da = pw / ph;
             let sx=0,sy2=0,sw=selfieImg.width,sh=selfieImg.height;
@@ -1035,248 +1047,15 @@ class QuantumTeleporter {
             else { sh=sw/da; sy2=(selfieImg.height-sh)/2; }
             ctx.drawImage(selfieImg, sx,sy2,sw,sh, px,y,pw,ph);
 
-            y += ph + 14;
-            ctx.font = "9px monospace";
-            ctx.fillStyle = "rgba(255,255,255,0.18)";
+            y += ph + 18;
+            ctx.font = "10px monospace";
+            ctx.fillStyle = "rgba(255,255,255,0.2)";
             ctx.textAlign = "center";
             ctx.fillText("REJESTRACJA MOMENTU PRZEKROCZENIA PORTALU", W/2, y);
-            y += 18;
+            y += 22;
         }
 
-        this.drawCertLine(ctx, W, y); y += 20;
-
-        // ── Dane podstawowe ──
-        ctx.textAlign = "left";
-        const dx = m + 50;
-
-        const field = (label, value, color) => {
-            ctx.font = "bold 9px monospace";
-            ctx.fillStyle = "rgba(255,255,255,0.3)";
-            ctx.fillText(label, dx, y); y += 18;
-            ctx.font = "bold 17px monospace";
-            ctx.fillStyle = color || "#00d4ff";
-            ctx.fillText(value, dx, y); y += 28;
-        };
-
-        field("IDENTYFIKATOR SKOKU", this.jumpId);
-        field("DATA I CZAS", now.toLocaleString("pl-PL"));
-        field("DYSTANS PRZEJŚCIOWY",
-            `${this.distanceWalked.toFixed(1)}m · ${this.stepCount} kroków`);
-
-        if (this.gpsPosition) {
-            field("WSPÓŁRZĘDNE ORIGIN",
-                `${this.gpsPosition.lat.toFixed(6)}°N  ${this.gpsPosition.lng.toFixed(6)}°E`);
-        }
-
-        field("STATUS", "✅ TELEPORTACJA ZAKOŃCZONA SUKCESEM", "#00ff88");
-
-        y += 5;
-        this.drawCertLine(ctx, W, y); y += 15;
-
-        // ══════════════════════════════════════════
-        //  QUANTUM SIGNATURE BLOCK
-        //  Przygotowane pod przyszłe podłączenie
-        //  do zewnętrznego silnika kwantowego
-        // ══════════════════════════════════════════
-
-        // Generuj dane kwantowe (teraz algorytmicznie, 
-        // docelowo z API silnika)
-        const qData = this.generateQuantumSignature();
-
-        // Nagłówek bloku
-        ctx.textAlign = "center";
-        ctx.font = "bold 10px monospace";
-        ctx.fillStyle = "rgba(0,212,255,0.4)";
-        ctx.fillText("◈ QUANTUM SIGNATURE BLOCK ◈", W/2, y); y += 18;
-
-        // Ramka bloku
-        const blockX = m + 30;
-        const blockW = W - m*2 - 60;
-        const blockY = y - 5;
-        const blockH = 200;
-
-        ctx.strokeStyle = "rgba(0,212,255,0.12)";
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
-        ctx.strokeRect(blockX, blockY, blockW, blockH);
-        ctx.setLineDash([]);
-
-        // Małe narożniki bloku
-        ctx.strokeStyle = "rgba(0,212,255,0.3)";
-        ctx.lineWidth = 2;
-        const bcs = 10;
-        [[blockX,blockY,1,1],
-         [blockX+blockW,blockY,-1,1],
-         [blockX,blockY+blockH,1,-1],
-         [blockX+blockW,blockY+blockH,-1,-1]
-        ].forEach(([bx,by,ddx,ddy]) => {
-            ctx.beginPath();
-            ctx.moveTo(bx, by+ddy*bcs); ctx.lineTo(bx, by); ctx.lineTo(bx+ddx*bcs, by);
-            ctx.stroke();
-        });
-
-        // Dane kwantowe
-        ctx.textAlign = "left";
-        const qx = blockX + 15;
-
-        const qField = (label, value, valueColor) => {
-            ctx.font = "bold 8px monospace";
-            ctx.fillStyle = "rgba(255,255,255,0.25)";
-            ctx.fillText(label, qx, y); 
-
-            ctx.font = "11px monospace";
-            ctx.fillStyle = valueColor || "rgba(0,212,255,0.6)";
-            ctx.fillText(value, qx + 195, y);
-            y += 16;
-        };
-
-        qField("ORIGIN TIMELINE",      qData.originTimeline);
-        qField("DESTINATION TIMELINE",  qData.destTimeline);
-        qField("COHERENCE INDEX",       qData.coherenceIndex,    "rgba(0,255,136,0.6)");
-        qField("DECOHERENCE TIME",      qData.decoherenceTime);
-        qField("OBSERVER HASH",         qData.observerHash,      "rgba(123,47,255,0.6)");
-        qField("ENTANGLEMENT STATE",    qData.entanglementState, "rgba(0,255,136,0.6)");
-        qField("PLANCK OFFSET",         qData.planckOffset);
-        qField("BRANCH SIGNATURE",      qData.branchSignature,   "rgba(255,45,85,0.6)");
-        qField("MULTIVERSE SECTOR",     qData.multiverseSector);
-        qField("ENGINE STATUS",         qData.engineStatus,      "rgba(255,170,0,0.6)");
-
-        y = blockY + blockH + 15;
-
-        // ── QR placeholder ──
-        // (docelowo prawdziwy QR z linkiem weryfikacyjnym)
-        const qrSize = 70;
-        const qrX = W - m - 55 - qrSize;
-        const qrY = blockY + blockH + 10;
-
-        ctx.strokeStyle = "rgba(0,212,255,0.15)";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(qrX, qrY, qrSize, qrSize);
-
-        // Symulacja QR (pattern)
-        this.drawFakeQR(ctx, qrX, qrY, qrSize, this.jumpId);
-
-        ctx.font = "7px monospace";
-        ctx.fillStyle = "rgba(255,255,255,0.15)";
-        ctx.textAlign = "center";
-        ctx.fillText("SCAN TO VERIFY", qrX + qrSize/2, qrY + qrSize + 10);
-
-        // ── Stopka ──
-        y = H - 80;
-        this.drawCertLine(ctx, W, y); y += 16;
-
-        ctx.textAlign = "center";
-        ctx.font = "8px monospace";
-        ctx.fillStyle = "rgba(255,255,255,0.15)";
-
-        const fullSig = `${this.jumpId}-${qData.branchSignature}-${Date.now().toString(36).toUpperCase()}`;
-        ctx.fillText(`SYGNATURA PEŁNA: ${fullSig}`, W/2, y); y += 12;
-        ctx.fillText("Quantum Teleport Interface v3.0 · Protokół Rekalibracji Koordynatów", W/2, y); y += 12;
-        ctx.fillText("Ten dokument potwierdza pomyślne dokonanie skoku kwantowego.", W/2, y); y += 12;
-        ctx.fillText("Weryfikacja integralności wymaga podłączenia do silnika kwantowego.", W/2, y);
-
-        y = H - 25;
-        ctx.font = "24px serif";
-        ctx.fillText("🌀", W/2, y);
-    }
-
-    // ══════════════════════════════════
-    //  QUANTUM SIGNATURE GENERATOR
-    //  
-    //  Teraz: deterministyczny z danych skoku
-    //  Docelowo: z API silnika kwantowego
-    // ══════════════════════════════════
-    generateQuantumSignature() {
-        const now = Date.now();
-        const seed = this.jumpId + now.toString();
-
-        // Pseudo-hash function
-        const hash = (str, len) => {
-            let h = 0;
-            for (let i = 0; i < str.length; i++) {
-                h = ((h << 5) - h) + str.charCodeAt(i);
-                h = h & h;
-            }
-            const hex = Math.abs(h).toString(16).toUpperCase().padStart(len, '0');
-            return hex.substring(0, len);
-        };
-
-        // Generuj timeline IDs (format: TL-XXXX-XXXX)
-        const originTL = `TL-${hash(seed + "origin", 4)}-${hash(seed + "o2", 4)}`;
-        const destTL = `TL-${hash(seed + "dest", 4)}-${hash(seed + "d2", 4)}`;
-
-        // Coherence index (0.000 - 1.000)
-        const coherence = (0.847 + (this.stepCount % 100) / 1000).toFixed(4);
-
-        // Decoherence time
-        const decoMs = 12.4 + (this.distanceWalked * 0.7);
-
-        // Observer hash
-        const obsHash = hash(
-            seed + navigator.userAgent + (this.gpsPosition?.lat || 0).toString(),
-            12
-        );
-
-        // Branch signature
-        const branchSig = hash(seed + "branch" + this.stepCount, 8);
-
-        // Multiverse sector (format: Σ-XXX.XXX)
-        const sector = `Σ-${(Math.abs(parseInt(hash(seed + "sector", 4), 16)) % 999).toString().padStart(3,'0')}.${(Math.abs(parseInt(hash(seed + "sub", 4), 16)) % 999).toString().padStart(3,'0')}`;
-
-        return {
-            originTimeline: originTL,
-            destTimeline: destTL,
-            coherenceIndex: coherence,
-            decoherenceTime: `${decoMs.toFixed(1)}ms`,
-            observerHash: `0x${obsHash}`,
-            entanglementState: "VERIFIED ◈",
-            planckOffset: `±${(1.616255e-35 * (1 + this.stepCount * 0.01)).toExponential(3)}m`,
-            branchSignature: branchSig,
-            multiverseSector: sector,
-            engineStatus: "⧗ AWAITING CONNECTION"
-        };
-    }
-
-    // ══════════════════════════════
-    //  FAKE QR (pattern generowany z ID)
-    // ══════════════════════════════
-    drawFakeQR(ctx, x, y, size, data) {
-        const cells = 15;
-        const cellSize = size / cells;
-
-        // Generuj pattern z danych
-        let bits = '';
-        for (let i = 0; i < data.length; i++) {
-            bits += data.charCodeAt(i).toString(2).padStart(8, '0');
-        }
-        // Powtórz żeby wystarczyło
-        while (bits.length < cells * cells) bits += bits;
-
-        ctx.fillStyle = "rgba(0,212,255,0.5)";
-
-        for (let row = 0; row < cells; row++) {
-            for (let col = 0; col < cells; col++) {
-                // Narożniki QR zawsze wypełnione (jak prawdziwy QR)
-                const isCorner =
-                    (row < 3 && col < 3) ||
-                    (row < 3 && col >= cells-3) ||
-                    (row >= cells-3 && col < 3);
-
-                const bitIndex = row * cells + col;
-                const isFilled = isCorner || bits[bitIndex % bits.length] === '1';
-
-                if (isFilled) {
-                    ctx.fillRect(
-                        x + col * cellSize,
-                        y + row * cellSize,
-                        cellSize - 0.5,
-                        cellSize - 0.5
-                    );
-                }
-            }
-        }
-    }
- this.drawCertLine(ctx, W, y); y += 25;
+        this.drawCertLine(ctx, W, y); y += 25;
 
         // ── Dane ──
         ctx.textAlign = "left";
@@ -1326,6 +1105,7 @@ class QuantumTeleporter {
         ctx.font = "36px serif";
         ctx.fillText("🌀", W/2, y);
     }
+
     drawCertLine(ctx, W, y) {
         const g = ctx.createLinearGradient(W*0.1, 0, W*0.9, 0);
         g.addColorStop(0, "rgba(0,212,255,0)");
