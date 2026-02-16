@@ -1,28 +1,41 @@
 /**
  * =============================================
- *  ADMIN PANEL — zarządzanie portalami
+ *  ADMIN PANEL v2
+ *  Zapisuje do localStorage → strona AR czyta
  * =============================================
  */
 
 let portals = [];
 
-// Załaduj istniejące portale z portals.js (jeśli istnieją)
-try {
-    if (typeof PORTALS_CONFIG !== 'undefined') {
-        portals = JSON.parse(JSON.stringify(PORTALS_CONFIG));
+// Ładuj z localStorage
+function loadPortals() {
+    try {
+        const saved = localStorage.getItem("ar-portals-config");
+        if (saved) {
+            portals = JSON.parse(saved);
+            console.log(`✅ Załadowano ${portals.length} portali`);
+        }
+    } catch(e) {
+        console.warn("Load error:", e);
+        portals = [];
     }
-} catch (e) {
-    console.log("Brak istniejących portali — zaczynamy od zera");
 }
 
-// ── Render listy portali ──
+// Zapisz do localStorage
+function savePortals() {
+    localStorage.setItem("ar-portals-config", JSON.stringify(portals));
+    console.log(`💾 Zapisano ${portals.length} portali`);
+}
+
+// ── Render listy ──
 function renderPortalList() {
     const list = document.getElementById("portal-list");
-    
+
     if (portals.length === 0) {
         list.innerHTML = `
             <div class="card" style="text-align:center; color:#666;">
-                Brak portali. Dodaj pierwszy poniżej! 👇
+                Brak portali. Dodaj pierwszy! 👇<br>
+                <small>Portale automatycznie pojawią się na stronie AR.</small>
             </div>`;
         return;
     }
@@ -32,12 +45,12 @@ function renderPortalList() {
         const dayNames = ["sun","mon","tue","wed","thu","fri","sat"];
         const today = dayNames[now.getDay()];
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
-        const [sh, sm] = p.schedule.startTime.split(":").map(Number);
-        const [eh, em] = p.schedule.endTime.split(":").map(Number);
+        const [sh, sm] = (p.schedule?.startTime || "00:00").split(":").map(Number);
+        const [eh, em] = (p.schedule?.endTime || "23:59").split(":").map(Number);
         const startMin = sh * 60 + sm;
         const endMin = eh * 60 + em;
 
-        let isActive = p.schedule.days.includes(today);
+        let isActive = (p.schedule?.days || []).includes(today);
         if (startMin <= endMin) {
             isActive = isActive && currentMinutes >= startMin && currentMinutes <= endMin;
         } else {
@@ -47,16 +60,14 @@ function renderPortalList() {
         return `
         <div class="card portal-card">
             <span class="status ${isActive ? 'active' : 'inactive'}">
-                ${isActive ? '🟢 Aktywny' : '🔴 Nieaktywny'}
+                ${isActive ? '🟢 AKTYWNY' : '🔴 Nieaktywny'}
             </span>
-            <div class="portal-name">${p.placeholder?.type === 'ring' ? '⭕' : p.placeholder?.type === 'torus' ? '🔵' : '🟣'} ${p.name}</div>
+            <div class="portal-name">${p.name || p.id}</div>
             <div class="portal-details">
-                <div class="detail">📍 <strong>${p.latitude.toFixed(4)}, ${p.longitude.toFixed(4)}</strong></div>
-                <div class="detail">🕐 <strong>${p.schedule.startTime} - ${p.schedule.endTime}</strong></div>
-                <div class="detail">📅 <strong>${p.schedule.days.map(d => d.charAt(0).toUpperCase() + d.slice(1,2)).join(', ')}</strong></div>
-                <div class="detail">📏 <strong>Zasięg: ${p.visibilityRadius}m</strong></div>
-                <div class="detail">🎨 <strong>${p.placeholder?.color || 'model 3D'}</strong></div>
-                <div class="detail">📦 <strong>${p.model || 'placeholder ' + (p.placeholder?.type || '')}</strong></div>
+                <div class="detail">📍 ${(p.latitude||0).toFixed(5)}, ${(p.longitude||0).toFixed(5)}</div>
+                <div class="detail">🕐 ${p.schedule?.startTime || '?'} - ${p.schedule?.endTime || '?'}</div>
+                <div class="detail">📅 ${(p.schedule?.days || []).join(', ')}</div>
+                <div class="detail">📏 Zasięg: ${p.visibilityRadius || '?'}m</div>
             </div>
             <button class="btn btn-delete" onclick="deletePortal(${i})">🗑️ Usuń</button>
         </div>`;
@@ -66,7 +77,6 @@ function renderPortalList() {
 // ── Dodaj portal ──
 function addPortal() {
     const name = document.getElementById("f-name").value.trim();
-    const desc = document.getElementById("f-desc").value.trim();
     const lat = parseFloat(document.getElementById("f-lat").value);
     const lng = parseFloat(document.getElementById("f-lng").value);
     const start = document.getElementById("f-start").value;
@@ -77,97 +87,50 @@ function addPortal() {
     const radius = parseInt(document.getElementById("f-radius").value) || 500;
     const model = document.getElementById("f-model").value.trim() || null;
 
-    // Walidacja
-    if (!name) return alert("Podaj nazwę portalu!");
-    if (isNaN(lat) || isNaN(lng)) return alert("Podaj prawidłowe współrzędne!");
-    if (!start || !end) return alert("Podaj godziny!");
+    if (!name) return alert("Podaj nazwę!");
+    if (isNaN(lat) || isNaN(lng)) return alert("Podaj współrzędne!");
 
-    // Pobierz wybrane dni
     const days = [];
     document.querySelectorAll(".day-toggle.selected").forEach(el => {
         days.push(el.dataset.day);
     });
-    if (days.length === 0) return alert("Wybierz przynajmniej jeden dzień!");
+    if (days.length === 0) return alert("Wybierz dni!");
 
-    // Generuj ID z nazwy
-    const id = "portal-" + name.toLowerCase()
-        .replace(/[ąć]/g, c => ({ą:'a',ć:'c'}[c]))
-        .replace(/[ęł]/g, c => ({ę:'e',ł:'l'}[c]))
-        .replace(/[ńóś]/g, c => ({ń:'n',ó:'o',ś:'s'}[c]))
-        .replace(/[żź]/g, 'z')
-        .replace(/[^a-z0-9]/g, '-')
-        .replace(/-+/g, '-')
-        .replace(/^-|-$/g, '');
-
-    // Hex to darker emissive
-    const emissive = color.replace(/^#/, '').match(/.{2}/g)
-        .map(c => Math.round(parseInt(c, 16) * 0.3).toString(16).padStart(2, '0'))
-        .join('');
+    const id = "portal-" + Date.now();
 
     const portal = {
-        id: id,
-        name: name,
-        description: desc,
+        id,
+        name,
         latitude: lat,
         longitude: lng,
-        model: model,
-        placeholder: {
-            type: shape,
-            color: color,
-            emissive: `#${emissive}`,
-            width: size,
-            height: size,
-            opacity: 0.85
-        },
+        model,
+        placeholder: { type: shape, color, emissive: "#111", width: size, height: size, opacity: 0.9 },
         scale: { x: size, y: size, z: size },
-        animation: {
-            property: "rotation",
-            to: "0 360 0",
-            loop: true,
-            duration: 20000,
-            easing: "linear"
-        },
-        animation2: {
-            property: "position",
-            dir: "alternate",
-            from: "0 0 0",
-            to: "0 0.5 0",
-            loop: true,
-            duration: 3000,
-            easing: "easeInOutSine"
-        },
-        schedule: {
-            startTime: start,
-            endTime: end,
-            days: days
-        },
+        animation: { property: "rotation", to: "0 360 0", loop: true, duration: 20000, easing: "linear" },
+        schedule: { startTime: start, endTime: end, days },
         visibilityRadius: radius,
-        particles: true,
-        sound: null
+        particles: true
     };
 
     portals.push(portal);
+    savePortals();          // ← KLUCZOWA ZMIANA: zapis do localStorage
     renderPortalList();
-    generateOutput();
     clearForm();
+
+    alert("✅ Portal dodany!\nBędzie widoczny na stronie AR w trybie LIVE.");
 }
 
 // ── Usuń portal ──
 function deletePortal(index) {
-    if (confirm(`Usunąć portal "${portals[index].name}"?`)) {
+    if (confirm(`Usunąć "${portals[index].name}"?`)) {
         portals.splice(index, 1);
+        savePortals();      // ← zapis
         renderPortalList();
-        generateOutput();
     }
 }
 
 // ── GPS ──
 function fillGPS() {
-    if (!navigator.geolocation) {
-        alert("GPS niedostępny w przeglądarce!");
-        return;
-    }
-
     navigator.geolocation.getCurrentPosition(
         pos => {
             document.getElementById("f-lat").value = pos.coords.latitude.toFixed(6);
@@ -178,55 +141,29 @@ function fillGPS() {
     );
 }
 
-// ── Generuj output ──
-function generateOutput() {
-    const output = document.getElementById("output");
-
-    let code = `/**\n * PORTALS CONFIG\n * Wygenerowano: ${new Date().toLocaleString('pl-PL')}\n */\n\n`;
-    code += `const PORTALS_CONFIG = ${JSON.stringify(portals, null, 4)};\n\n`;
-    code += `const APP_CONFIG = {\n`;
-    code += `    scheduleCheckInterval: 30000,\n`;
-    code += `    gpsUpdateInterval: 5000,\n`;
-    code += `    defaultVisibilityRadius: 500,\n`;
-    code += `    showDistantIndicators: true,\n`;
-    code += `    maxIndicatorDistance: 2000,\n`;
-    code += `    debug: true\n`;
-    code += `};\n`;
-
-    output.textContent = code;
-}
-
-// ── Kopiuj do schowka ──
-function copyOutput() {
-    const text = document.getElementById("output").textContent;
-    navigator.clipboard.writeText(text).then(() => {
-        alert("✅ Skopiowano do schowka!\n\nWklej zawartość do pliku js/portals.js");
-    }).catch(() => {
-        // Fallback
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        ta.remove();
-        alert("✅ Skopiowano!");
-    });
-}
-
-// ── Wyczyść formularz ──
+// ── Clear form ──
 function clearForm() {
     document.getElementById("f-name").value = "";
     document.getElementById("f-desc").value = "";
     document.getElementById("f-model").value = "";
 }
 
-// ── Toggling dni ──
+// ── Export JSON (do pobrania) ──
+function exportJSON() {
+    const blob = new Blob([JSON.stringify(portals, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "portals-config.json";
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+// ── Day toggles ──
 document.querySelectorAll(".day-toggle").forEach(el => {
-    el.addEventListener("click", () => {
-        el.classList.toggle("selected");
-    });
+    el.addEventListener("click", () => el.classList.toggle("selected"));
 });
 
-// ── Init ──
+// ── INIT ──
+loadPortals();
 renderPortalList();
-generateOutput();
